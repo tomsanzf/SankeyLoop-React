@@ -286,6 +286,39 @@ export default function Editor() {
     }
   };
 
+  const handleTablePaste = (e: React.ClipboardEvent<HTMLInputElement>, startRow: number, startField: keyof Flow) => {
+    const pasteData = e.clipboardData.getData('text');
+    if (!pasteData || (!pasteData.includes('\t') && !pasteData.includes('\n'))) {
+      return;
+    }
+    e.preventDefault();
+    const rows = pasteData.split(/\r?\n/).filter(line => line.trim() !== '');
+    const newFlows = [...editScenarioData.flows];
+    
+    const colKeys: (keyof Flow)[] = ['Source', 'Target', 'Value', 'Color'];
+    const startColIdx = colKeys.indexOf(startField);
+
+    let currentRow = startRow;
+    for (let i = 0; i < rows.length; i++) {
+      const cells = rows[i].split('\t');
+      if (!newFlows[currentRow]) {
+        newFlows[currentRow] = { Source: '', Target: '', Value: '', Color: '' };
+      }
+      let cellIdx = 0;
+      for (let c = startColIdx; c < colKeys.length && cellIdx < cells.length; c++) {
+        newFlows[currentRow][colKeys[c]] = cells[cellIdx].trim();
+        cellIdx++;
+      }
+      currentRow++;
+    }
+
+    if (newFlows.length > 0 && (newFlows[newFlows.length - 1].Source.trim() !== '' || newFlows[newFlows.length - 1].Target.trim() !== '')) {
+      newFlows.push({ Source: '', Target: '', Value: '', Color: '' });
+    }
+
+    updateScenario(editScenario, { flows: newFlows });
+  };
+
   const { labels } = useMemo(() => buildSankeyData(activeScenario.flows, config), [activeScenario.flows, config]);
 
   return (
@@ -759,10 +792,10 @@ export default function Editor() {
                         <tbody>
                           {editScenarioData.flows.map((flow, i) => (
                             <tr key={i} className="hover:bg-[var(--surface2)] border-b border-[var(--border)] last:border-b-0">
-                              <td className="p-0"><input type="text" value={flow.Source} onChange={e => handleFlowChange(i, 'Source', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)]" /></td>
-                              <td className="p-0"><input type="text" value={flow.Target} onChange={e => handleFlowChange(i, 'Target', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)]" /></td>
-                              <td className="p-0"><input type="text" value={flow.Value} onChange={e => handleFlowChange(i, 'Value', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)]" /></td>
-                              <td className="p-0"><input type="text" value={flow.Color} onChange={e => handleFlowChange(i, 'Color', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)]" /></td>
+                              <td className="p-0"><input type="text" value={flow.Source} onPaste={e => handleTablePaste(e, i, 'Source')} onChange={e => handleFlowChange(i, 'Source', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
+                              <td className="p-0"><input type="text" value={flow.Target} onPaste={e => handleTablePaste(e, i, 'Target')} onChange={e => handleFlowChange(i, 'Target', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
+                              <td className="p-0"><input type="text" value={flow.Value} onPaste={e => handleTablePaste(e, i, 'Value')} onChange={e => handleFlowChange(i, 'Value', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
+                              <td className="p-0"><input type="text" value={flow.Color} onPaste={e => handleTablePaste(e, i, 'Color')} onChange={e => handleFlowChange(i, 'Color', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
                               <td className="p-1 text-center">
                                 {(i !== editScenarioData.flows.length - 1 || flow.Source) && (
                                   <button onClick={() => deleteFlow(i)} className="text-[var(--text3)] hover:text-[var(--danger)] text-lg">×</button>
