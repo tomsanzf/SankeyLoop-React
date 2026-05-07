@@ -176,7 +176,7 @@ export const SankeyDiagram: React.FC<SankeyDiagramProps> = ({
     const sankeyTrace: any = {
       type: 'sankey',
       orientation: config.orientation,
-      arrangement: (nodeX && nodeY) ? 'freeform' : config.nodeArrangement,
+      arrangement: config.nodeArrangement,
       textfont: { color: config.labelColor, size: Math.max(8, scaledLabelSize) },
       node: nodeSpec,
       link: {
