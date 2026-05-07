@@ -125,7 +125,7 @@ const INITIAL_SCENARIOS = {
 
 export default function Editor() {
   const [config, setConfig] = useState<Config>(INITIAL_CONFIG);
-  const [scenarios, setScenarios] = useState<{ before: Scenario; after: Scenario }>(INITIAL_SCENARIOS);
+  const [scenarios, setScenarios] = useState<Record<string, Scenario>>(INITIAL_SCENARIOS);
 
   useEffect(() => {
     const saved = localStorage.getItem('sankeyloop_load_example');
@@ -145,8 +145,9 @@ export default function Editor() {
       }
     }
   }, []);
-  const [editScenario, setEditScenario] = useState<'before' | 'after'>('before');
-  const [viewScenario, setViewScenario] = useState<'before' | 'after'>('before');
+  const [videoEditorEnabled, setVideoEditorEnabled] = useState(false);
+  const [editScenario, setEditScenario] = useState<string>('before');
+  const [viewScenario, setViewScenario] = useState<string>('before');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [dataSectionHeight, setDataSectionHeight] = useState(300);
   const [dataSectionOpen, setDataSectionOpen] = useState(true);
@@ -154,7 +155,13 @@ export default function Editor() {
   const [isViewsSynced, setIsViewsSynced] = useState(false);
   const [animating, setAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(3);
-  const [renderedPPUs, setRenderedPPUs] = useState<{ before: number | null, after: number | null }>({ before: null, after: null });
+  const [renderedPPUs, setRenderedPPUs] = useState<Record<string, number | null>>({ 
+    before: null, 
+    '25%': null, 
+    '50%': null, 
+    '75%': null, 
+    after: null 
+  });
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     save: false,
     theme: true,
@@ -170,11 +177,73 @@ export default function Editor() {
 
   const updateConfig = (updates: Partial<Config>) => setConfig(prev => ({ ...prev, ...updates }));
 
-  const updateScenario = (key: 'before' | 'after', updates: Partial<Scenario>) => {
+  const updateScenario = (key: string, updates: Partial<Scenario>) => {
     setScenarios(prev => ({
       ...prev,
       [key]: { ...prev[key], ...updates },
     }));
+  };
+
+  const toggleVideoEditor = () => {
+    setVideoEditorEnabled(prev => {
+      const next = !prev;
+      if (!next && ['25%', '50%', '75%'].includes(viewScenario)) {
+        setViewScenario('before');
+      }
+      if (next) {
+        setScenarios(curr => {
+          const intermediateKeys = ['25%', '50%', '75%'];
+          const nextScenarios = { ...curr };
+          
+          intermediateKeys.forEach(key => {
+            const t = parseInt(key) / 100;
+            const bFlows = curr.before.flows;
+            const aFlows = curr.after.flows;
+            
+            const getFlowKey = (f: Flow) => `${String(f.Source).trim()}||${String(f.Target).trim()}`;
+            const aMap = new Map(aFlows.map(f => [getFlowKey(f), f]));
+            
+            const newFlows = bFlows.map(fB => {
+              const fA = aMap.get(getFlowKey(fB)) as Flow | undefined;
+              const vB = parseFloat(String(fB.Value).replace(',', '.')) || 0;
+              const vA = fA ? (parseFloat(String(fA.Value).replace(',', '.')) || 0) : 0;
+              const v = vB + (vA - vB) * t;
+              return { ...fB, Value: v.toFixed(2), Color: t < 0.5 ? fB.Color : (fA?.Color || fB.Color) };
+            });
+
+            // Interpolate node spacing
+            const nB = curr.before.nodeSpacing ?? config.nodeSpacing;
+            const nA = curr.after.nodeSpacing ?? config.nodeSpacing;
+            const n = nB + (nA - nB) * t;
+
+            // Interpolate positions if available
+            let newPositions = { ...curr.before.nodePositions };
+            if (curr.after.hasDraggedNodes && curr.before.hasDraggedNodes) {
+              Object.keys(curr.before.nodePositions).forEach(nodeName => {
+                const pB = curr.before.nodePositions[nodeName];
+                const pA = curr.after.nodePositions[nodeName];
+                if (pB && pA) {
+                  newPositions[nodeName] = {
+                    x: pB.x + (pA.x - pB.x) * t,
+                    y: pB.y + (pA.y - pB.y) * t
+                  };
+                }
+              });
+            }
+
+            nextScenarios[key] = {
+              flows: newFlows,
+              nodeColorOverrides: { ...curr.before.nodeColorOverrides },
+              nodePositions: newPositions,
+              hasDraggedNodes: curr.before.hasDraggedNodes || curr.after.hasDraggedNodes,
+              nodeSpacing: n
+            };
+          });
+          return nextScenarios;
+        });
+      }
+      return next;
+    });
   };
 
   const handleNodeDrag = (positions: Record<string, { x: number; y: number }>) => {
@@ -195,6 +264,12 @@ export default function Editor() {
   const toggleSyncViews = () => {
     setIsViewsSynced(prev => {
       const next = !prev;
+      if (!next) {
+        setTimeout(() => {
+          setVideoEditorEnabled(false);
+          setViewScenario(curr => ['25%', '50%', '75%'].includes(curr) ? 'before' : curr);
+        }, 0);
+      }
       if (next) {
         setScenarios(curr => {
           const bFlows = [...curr.before.flows];
@@ -353,19 +428,12 @@ export default function Editor() {
       setExportingVideo(true);
       setVideoProgress(0);
 
-      // === Use the live Plotly element — same renderer as the static PNG export ===
       const plotEl = document.querySelector('.js-plotly-plot') as any;
       if (!plotEl) {
         alert('No diagram found. Make sure a scenario is visible before exporting.');
         setExportingVideo(false);
         return;
       }
-
-      // Read the actual rendered height from the live element — this is the
-      // scaleFactor the static view already uses correctly.
-      const liveHeight: number = plotEl._fullLayout?.height ?? 800;
-      const BASE_HEIGHT = 800;
-      const scaleFactor = liveHeight / BASE_HEIGHT;
 
       const fps = 15;
       const duration = animSpeed || 3;
@@ -376,59 +444,114 @@ export default function Editor() {
       const delayMs = Math.round(1000 / fps);
 
       const dims = getExportDimensions(config);
+      const canvas = document.createElement('canvas');
+      canvas.width = dims.width;
+      canvas.height = dims.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) throw new Error('Could not get canvas context');
 
-      // ── Inline trace builder — mirrors SankeyDiagram.tsx exactly ──────────────
-      // Using the live scaleFactor guarantees identical scaling to the static view.
-      const buildFrame = (scenario: Scenario) => {
-        const { labels, src, tgt, val, linkColors } = buildSankeyData(scenario.flows, config);
-        if (!labels.length) return null;
+      // GIF setup
+      const GIFEncoderFn = gifenc.GIFEncoder || gifenc.default || ((gifenc as any).default?.GIFEncoder);
+      if (!GIFEncoderFn) throw new Error('GIFEncoder not found');
+      const gif = GIFEncoderFn();
 
+      // Anchors: 0%, 25%, 50%, 75%, 100%
+      const anchorKeys = ['before', '25%', '50%', '75%', 'after'];
+      const anchors = anchorKeys.map(k => scenarios[k]);
+
+      for (let i = 0; i < nFrames; i++) {
+        let t_total = 0;
+        if (i < nFramesPause) t_total = 0;
+        else if (i >= nFramesPause + nFramesBody) t_total = 1;
+        else t_total = (i - nFramesPause) / (nFramesBody > 1 ? nFramesBody - 1 : 1);
+
+        const segmentIdx = Math.min(3, Math.floor(t_total * 3.99));
+        const localT = (t_total * 4) - segmentIdx;
+        
+        const sStart = anchors[segmentIdx];
+        const sEnd = anchors[segmentIdx + 1];
+        
+        const getFlowKey = (f: Flow) => `${String(f.Source).trim()}||${String(f.Target).trim()}`;
+        const endMap = new Map(sEnd.flows.map(f => [getFlowKey(f), f]));
+        
+        const interpolatedFlows = sStart.flows.map(fB => {
+          const fA = endMap.get(getFlowKey(fB)) as Flow | undefined;
+          const vB = parseFloat(String(fB.Value).replace(',', '.')) || 0;
+          const vA = fA ? (parseFloat(String(fA.Value).replace(',', '.')) || 0) : 0;
+          const v = vB + (vA - vB) * localT;
+          return {
+            ...fB,
+            Value: v.toFixed(4),
+            Color: localT < 0.5 ? fB.Color : (fA?.Color || fB.Color)
+          };
+        });
+
+        const startMap = new Map(sStart.flows.map(f => [getFlowKey(f), f]));
+        sEnd.flows.forEach(fA => {
+          if (!startMap.has(getFlowKey(fA))) {
+             const vA = parseFloat(String(fA.Value).replace(',', '.')) || 0;
+             interpolatedFlows.push({ ...fA, Value: (vA * localT).toFixed(4) });
+          }
+        });
+
+        const currentSpacing_start = sStart.nodeSpacing ?? config.nodeSpacing;
+        const currentSpacing_end = sEnd.nodeSpacing ?? config.nodeSpacing;
+        const currentSpacing = currentSpacing_start + (currentSpacing_end - currentSpacing_start) * localT;
+
+        const { labels, src, tgt, val, linkColors } = buildSankeyData(interpolatedFlows, config);
+        
         const nodeIn = new Array(labels.length).fill(0);
         const nodeOut = new Array(labels.length).fill(0);
-        for (let i = 0; i < src.length; i++) {
-          nodeOut[src[i]] += val[i];
-          nodeIn[tgt[i]] += val[i];
+        for (let j = 0; j < src.length; j++) {
+          nodeOut[src[j]] += val[j];
+          nodeIn[tgt[j]] += val[j];
         }
 
-        const displayLabels = labels.map((l, i) => {
-          const total = Math.round(Math.max(nodeIn[i], nodeOut[i]));
+        const displayLabels = labels.map((l, idx) => {
+          const total = Math.round(Math.max(nodeIn[idx], nodeOut[idx]));
           return l ? `${l}<br>${total.toLocaleString('en').replace(/,/g, '\u2009')} ${config.valueUnit}` : '';
         });
 
         const resolvedDefault = resolveNodeColor(config.defaultNodeColor, '#808080');
         const nodeColors = labels.map(l => {
           if (!l) return 'rgba(0,0,0,0)';
-          const raw = scenario.nodeColorOverrides[l];
-          return (raw !== undefined && raw !== '') ? resolveNodeColor(raw, resolvedDefault) : resolvedDefault;
+          const overrideS = sStart.nodeColorOverrides[l];
+          const overrideE = sEnd.nodeColorOverrides[l];
+          const override = localT < 0.5 ? (overrideS || overrideE) : (overrideE || overrideS);
+          return override ? resolveNodeColor(override, resolvedDefault) : resolvedDefault;
         });
 
-        // Node positions — same ghost-node logic as SankeyDiagram.tsx
-        let nodeX: number[] | undefined, nodeY: number[] | undefined;
-        if (scenario.hasDraggedNodes && Object.keys(scenario.nodePositions).length > 0) {
-          const parsedX = labels.map(l => l ? scenario.nodePositions[l]?.x : undefined).filter(x => x !== undefined) as number[];
-          const sortedX = [...parsedX].sort((a, b) => a - b);
-          let safeX = 0, found = false;
-          for (let i = 0; i < sortedX.length - 1; i++) {
-            if (sortedX[i + 1] - sortedX[i] > 0.05) { safeX = sortedX[i] + 0.025; found = true; break; }
-          }
-          if (!found) safeX = (sortedX[sortedX.length - 1] || 0) + 0.05;
-          if (safeX > 1) safeX = -0.5;
+        const posS = sStart.hasDraggedNodes ? sStart.nodePositions : (sStart.nativePositions || sStart.nodePositions);
+        const posE = sEnd.hasDraggedNodes ? sEnd.nodePositions : (sEnd.nativePositions || sEnd.nodePositions);
 
-          const xs = labels.map((l, i) => l ? scenario.nodePositions[l]?.x : (i === labels.length - 2 ? safeX : safeX + 0.001));
-          const ys = labels.map((l, i) => l ? scenario.nodePositions[l]?.y : 0.5);
-          if (xs.every(x => x != null)) { nodeX = xs as number[]; nodeY = ys as number[]; }
-        }
-        if (!nodeX && config.nodeAlignment !== 'justify') {
-          nodeX = computeAlignedX(src, tgt, val, labels, config.nodeAlignment);
-        }
+        const xPos = labels.map(l => {
+          const pS = posS[l];
+          const pE = posE[l];
+          if (pS && pE) return pS.x + (pE.x - pS.x) * localT;
+          if (pS) return pS.x;
+          if (pE) return pE.x;
+          return null; // fallback to auto layout if not found
+        });
+        const yPos = labels.map(l => {
+          const pS = posS[l];
+          const pE = posE[l];
+          if (pS && pE) return pS.y + (pE.y - pS.y) * localT;
+          if (pS) return pS.y;
+          if (pE) return pE.y;
+          return null;
+        });
 
-        // Scale exactly as SankeyDiagram.tsx does — using the live container's scaleFactor
-        const scaledNodeSpacing = (scenario.nodeSpacing ?? config.nodeSpacing) * scaleFactor;
+        // Direct mathematical mapping for the export size
+        const scaleFactor = dims.height / 800;
+
+        const scaledNodeSpacing = currentSpacing * scaleFactor;
         const scaledNodeThickness = config.nodeThickness * scaleFactor;
         const scaledLabelSize = config.labelSize * scaleFactor;
         const scaledVMargin = config.vMargin * scaleFactor;
         const scaledHMargin = config.hMargin * scaleFactor;
 
+        const nodeMeta = labels.map((l, idx) => [l || 'Phantom', nodeIn[idx], nodeOut[idx]]);
+        
         const nodeSpec: any = {
           pad: scaledNodeSpacing,
           thickness: scaledNodeThickness,
@@ -436,34 +559,46 @@ export default function Editor() {
           align: config.nodeAlignment,
           color: nodeColors,
           line: { color: config.bgColor, width: 1 },
+          customdata: nodeMeta,
         };
-        if (nodeX && nodeY) { nodeSpec.x = nodeX; nodeSpec.y = nodeY; }
-        else if (nodeX) { nodeSpec.x = nodeX; }
+        
+        if (xPos.every(x => x !== null)) {
+          nodeSpec.x = xPos;
+          nodeSpec.y = yPos;
+        } else if (config.nodeAlignment !== 'justify') {
+           const computedX = computeAlignedX(src, tgt, val, labels, config.nodeAlignment);
+           nodeSpec.x = computedX;
+        }
 
         const sankeyTrace: any = {
           type: 'sankey',
           orientation: config.orientation,
-          arrangement: (nodeX && nodeY) ? 'freeform' : config.nodeArrangement,
+          arrangement: config.nodeArrangement,
           textfont: { color: config.labelColor, size: Math.max(8, scaledLabelSize) },
           node: nodeSpec,
-          link: { source: src, target: tgt, value: val, color: [...linkColors], arrowlen: config.arrowSize },
+          link: { 
+            source: src, 
+            target: tgt, 
+            value: val, 
+            color: linkColors.map(c => c.replace(/[\d.]+\)$/, `${config.linkOpacity})`)),
+            arrowlen: config.arrowSize
+          },
         };
 
-        // Gradient bar — identical to SankeyDiagram.tsx
         const N = 20;
         const { highVal, lowVal, midVal, hotHighCol, hotLowCol, coldHighCol, coldLowCol } = config;
-        const range = highVal - lowVal;
-        const barColors: string[] = [];
-        for (let i = 0; i < N; i++) {
-          const v2 = highVal - (i + 0.5) * (range / N);
+        const rangeStr = highVal - lowVal;
+        const barColors = [];
+        for (let j = 0; j < N; j++) {
+          const v2 = highVal - (j + 0.5) * (rangeStr / N);
           let c = v2 >= midVal
             ? interpolateRgb(v2, midVal, highVal, hotLowCol, hotHighCol, 1.0)
             : interpolateRgb(v2, lowVal, midVal, coldLowCol, coldHighCol, 1.0);
           barColors.push(c.replace(/,\s*[\d.]+\)$/, ')').replace('rgba', 'rgb'));
         }
-        const midTick = N * (midVal - lowVal) / (range || 1);
-        const barTraces = barColors.map((color, i) => ({
-          type: 'bar', x: [''], y: [1], base: N - i - 1,
+        const midTick = N * (midVal - lowVal) / (rangeStr || 1);
+        const barTraces = barColors.map((color, j) => ({
+          type: 'bar', x: [''], y: [1], base: N - j - 1,
           marker: { color, line: { width: 0 } },
           showlegend: false, hoverinfo: 'skip',
         }));
@@ -475,12 +610,12 @@ export default function Editor() {
         const sankeyEnd = 1 - gapFrac - barW - rightMarginFrac - loopbackPaddingFrac;
         const barStart = 1 - barW - rightMarginFrac;
         const barEnd = barStart + barW;
+
         sankeyTrace.domain = { x: [0, Math.max(0.5, sankeyEnd - 0.005)], y: [0, 1] };
 
-        // autosize: true — same as the live view, NOT fixed width/height.
-        // Plotly.toImage() will then render at the requested export dims.
         const layout: any = {
-          autosize: true,
+          width: dims.width,
+          height: dims.height,
           paper_bgcolor: config.bgColor,
           plot_bgcolor: config.bgColor,
           barmode: 'stack',
@@ -497,182 +632,44 @@ export default function Editor() {
           },
         };
 
-        return { traces: [sankeyTrace, ...barTraces] as any[], layout, linkColors };
-      };
-      // ── End trace builder ──────────────────────────────────────────────────────
-
-      // GIF setup
-      const GIFEncoderFn = gifenc.GIFEncoder || gifenc.default || ((gifenc as any).default?.GIFEncoder);
-      if (!GIFEncoderFn) throw new Error('GIFEncoder not found in gifenc module');
-      const gif = GIFEncoderFn();
-
-      const canvas = document.createElement('canvas');
-      canvas.width = dims.width;
-      canvas.height = dims.height;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) { alert('Canvas context failed'); setExportingVideo(false); return; }
-
-      // Build merged flow map (before + after)
-      const flowMap = new Map<string, { b: Flow, a: Flow }>();
-      const matchesBefore = new Map<string, number>();
-      scenarios.before.flows.forEach(fl => {
-        const s = String(fl.Source).trim(); const t = String(fl.Target).trim();
-        if (!s || !t) return;
-        const baseKey = `${s}||${t}`;
-        const c = matchesBefore.get(baseKey) || 0; matchesBefore.set(baseKey, c + 1);
-        flowMap.set(`${baseKey}||${c}`, { b: fl, a: { Source: fl.Source, Target: fl.Target, Value: '0', Color: fl.Color } });
-      });
-      const matchesAfter = new Map<string, number>();
-      scenarios.after.flows.forEach(fl => {
-        const s = String(fl.Source).trim(); const t = String(fl.Target).trim();
-        if (!s || !t) return;
-        const baseKey = `${s}||${t}`;
-        const c = matchesAfter.get(baseKey) || 0; matchesAfter.set(baseKey, c + 1);
-        const key = `${baseKey}||${c}`;
-        if (flowMap.has(key)) { flowMap.get(key)!.a = fl; }
-        else { flowMap.set(key, { b: { Source: fl.Source, Target: fl.Target, Value: '0', Color: fl.Color }, a: fl }); }
-      });
-      const allFlowsArr = Array.from(flowMap.values());
-
-      let PPU_0 = 0;
-      const NP_0 = scenarios.before.nodeSpacing ?? config.nodeSpacing;
-      const NP_end = scenarios.after.nodeSpacing ?? config.nodeSpacing;
-      const debugInfo: VideoDebugInfo[] = [];
-
-      // ── Frame loop ─────────────────────────────────────────────────────────────
-      for (let f = 0; f < nFrames; f++) {
-        setVideoProgress(Math.round((f / nFrames) * 90));
-        await new Promise(r => setTimeout(r, 5));
-
-        let ratio = 0;
-        if (f < nFramesPause) ratio = 0;
-        else if (f >= nFramesPause + nFramesBody) ratio = 1;
-        else ratio = (f - nFramesPause) / (nFramesBody - 1);
-        const t = 0.5 - 0.5 * Math.cos(Math.PI * ratio);
-
-        // Interpolate flow values and opacity
-        const opacities: number[] = new Array(allFlowsArr.length).fill(config.linkOpacity);
-        const interpolatedFlows: Flow[] = allFlowsArr.map((item, i) => {
-          let valB = parseFloat(String(item.b.Value).replace(',', '.')) || 0; if (valB < 0) valB = Math.abs(valB);
-          let valA = parseFloat(String(item.a.Value).replace(',', '.')) || 0; if (valA < 0) valA = Math.abs(valA);
-          let currentVal = valB + (valA - valB) * t;
-          if (currentVal < 0.001) currentVal = 1e-5;
-
-          if (valB === 0 && valA > 0) opacities[i] = t * config.linkOpacity;
-          else if (valB > 0 && valA === 0) opacities[i] = (1 - t) * config.linkOpacity;
-          else if (valB === 0 && valA === 0) opacities[i] = config.ghostOpacity;
-          else opacities[i] = config.linkOpacity;
-
-          return { Source: item.b.Source, Target: item.b.Target, Value: String(currentVal), Color: t < 0.5 ? item.b.Color : item.a.Color };
-        });
-
-        // Interpolate pad
-        const padB = scenarios.before.nodeSpacing ?? config.nodeSpacing;
-        const padA = scenarios.after.nodeSpacing ?? config.nodeSpacing;
-        const dynamicPad = padB + (padA - padB) * t;
-
-        // Interpolate node positions
-        const posBMap = scenarios.before.hasDraggedNodes ? scenarios.before.nodePositions : (scenarios.before.nativePositions || scenarios.before.nodePositions);
-        const posAMap = scenarios.after.hasDraggedNodes ? scenarios.after.nodePositions : (scenarios.after.nativePositions || scenarios.after.nodePositions);
-        const interpolatedPositions: Record<string, { x: number; y: number }> = {};
-        const allNodeNames = new Set([...Object.keys(posBMap || {}), ...Object.keys(posAMap || {})]);
-        allNodeNames.forEach(name => {
-          const posB = (posBMap || {})[name] || (posAMap || {})[name];
-          const posA = (posAMap || {})[name] || (posBMap || {})[name];
-          if (posB && posA) interpolatedPositions[name] = { x: posB.x + (posA.x - posB.x) * t, y: posB.y + (posA.y - posB.y) * t };
-        });
-
-        const frameScenarioBase: Scenario = {
-          flows: interpolatedFlows,
-          nodeColorOverrides: t < 0.5 ? scenarios.before.nodeColorOverrides : scenarios.after.nodeColorOverrides,
-          nodePositions: interpolatedPositions,
-          hasDraggedNodes: Object.keys(interpolatedPositions).length > 0,
-          nodeSpacing: dynamicPad,
-        };
-
-        let NP_corrected = dynamicPad;
-        const scaledVMarginBase = config.vMargin * scaleFactor;
+        const imgData = await Plotly.toImage({
+          data: [sankeyTrace, ...barTraces],
+          layout: layout
+        }, { format: 'png', width: dims.width, height: dims.height });
         
-        let PPU_n = 0;
-        let target = 0;
-        let x = 0;
-        let PPU_aftercorrection = 0;
-
-        if (f === 0) {
-          const scaledNodeSpacingBase = dynamicPad * scaleFactor;
-          PPU_0 = computeSankeyMetrics(frameScenarioBase, { ...config, figHeight: liveHeight, vMargin: scaledVMarginBase, nodeSpacing: scaledNodeSpacingBase }).ppu;
-          PPU_n = PPU_0;
-          target = NP_0;
-          PPU_aftercorrection = PPU_0;
-        } else {
-          const scaledNodeSpacingBase = dynamicPad * scaleFactor;
-          PPU_n = computeSankeyMetrics(frameScenarioBase, { ...config, figHeight: liveHeight, vMargin: scaledVMarginBase, nodeSpacing: scaledNodeSpacingBase }).ppu;
-          x = Math.min(1.6, Math.abs(PPU_n - PPU_0) / PPU_0);
-          target = PPU_n > PPU_0 ? NP_end : NP_0;
-          NP_corrected = dynamicPad + x * (target - dynamicPad);
-          NP_corrected = Math.max(0, NP_corrected);
-          
-          const scaledNodeSpacingCorrected = NP_corrected * scaleFactor;
-          PPU_aftercorrection = computeSankeyMetrics({ ...frameScenarioBase, nodeSpacing: NP_corrected }, { ...config, figHeight: liveHeight, vMargin: scaledVMarginBase, nodeSpacing: scaledNodeSpacingCorrected }).ppu;
-        }
-
-        debugInfo.push({
-          frame: f,
-          ppu_n: PPU_n,
-          np_n: dynamicPad,
-          x,
-          target,
-          np_corrected: NP_corrected,
-          ppu_after: PPU_aftercorrection,
+        await new Promise<void>((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+             ctx.fillStyle = config.bgColor || '#ffffff';
+             ctx.fillRect(0, 0, dims.width, dims.height);
+             ctx.drawImage(img, 0, 0);
+             const pixels = ctx.getImageData(0, 0, dims.width, dims.height).data;
+             const quantizeFn = gifenc.quantize || (gifenc as any).default?.quantize;
+             const applyPaletteFn = gifenc.applyPalette || (gifenc as any).default?.applyPalette;
+             const palette = quantizeFn(pixels, 256, { format: 'rgb565' });
+             const index = applyPaletteFn(pixels, palette);
+             gif.writeFrame(index, dims.width, dims.height, { palette, delay: delayMs });
+             resolve();
+          };
+          img.src = imgData;
         });
 
-        const frameScenario: Scenario = {
-          ...frameScenarioBase,
-          nodeSpacing: NP_corrected,
-        };
+        setVideoProgress(Math.round(((i + 1) / nFrames) * 90));
 
-        const built = buildFrame(frameScenario);
-        if (!built) continue;
-
-        // Apply per-link opacity
-        built.traces[0].link.color = built.traces[0].link.color.map((c: string, i: number) =>
-          c.replace(/[\d.]+\)$/, `${opacities[i].toFixed(3)})`)
-        );
-
-        // ── Render on the live element (same path as static PNG export) ──────────
-        await Plotly.react(plotEl, built.traces, built.layout, { displayModeBar: false, responsive: true });
-
-        // Capture at export dims — identical to exportImage()
-        const dataUrl = await Plotly.toImage(plotEl, { format: 'png', width: dims.width, height: dims.height });
-
-        const img = new Image();
-        await new Promise(r => { img.onload = () => r(null); img.onerror = () => r(null); img.src = dataUrl; });
-
-        ctx.fillStyle = config.bgColor || '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-        const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        await new Promise(r => setTimeout(r, 10));
-
-        const quantizeFn = gifenc.quantize || (gifenc as any).default?.quantize;
-        const applyPaletteFn = gifenc.applyPalette || (gifenc as any).default?.applyPalette;
-        const palette = quantizeFn(data, 256, { format: 'rgb565' });
-        const index = applyPaletteFn(data, palette);
-        gif.writeFrame(index, canvas.width, canvas.height, { palette, delay: delayMs });
+        // Yield to the browser to prevent UI freezing and ensure progress text updates
+        await new Promise(r => setTimeout(r, 0));
       }
-
-      setVideoProgress(100);
       gif.finish();
-      const blob = new Blob([gif.bytes()], { type: 'image/gif' });
+      const buffer = gif.bytes();
+      const blob = new Blob([buffer], { type: 'image/gif' });
       setGifPreviewUrl(URL.createObjectURL(blob));
-      setVideoDebugInfo(debugInfo);
-
-    } catch (e) {
-      console.error('Failed to create GIF', e);
-      alert('Failed to create GIF: ' + String(e));
+      setVideoProgress(100);
+      setExportingVideo(false);
+    } catch (err) {
+      console.error('Video generation failed:', err);
+      alert('Video generation failed: ' + err);
+      setExportingVideo(false);
     } finally {
-      // Force SankeyDiagram to re-render its actual scenario onto the live element
       setConfig(prev => ({ ...prev }));
       setExportingVideo(false);
     }
@@ -1213,18 +1210,20 @@ export default function Editor() {
                {/* Scenario Tabs */}
               {inputMode !== 'guided' && (
                 <div className="flex bg-[var(--surface)] border-b border-[var(--border)] shrink-0">
-                  <button 
-                    className={cn("flex-1 px-3 py-2 text-xs font-semibold text-center border-r border-b-2 transition-all border-[var(--border)]", editScenario === 'before' ? "text-[var(--text)] bg-[var(--surface)] border-b-[var(--accent)]" : "text-[var(--text2)] bg-[var(--surface2)] border-b-transparent hover:text-[var(--text)]")}
-                    onClick={() => setEditScenario('before')}
-                  >
-                    ✏️ Before
-                  </button>
-                  <button 
-                    className={cn("flex-1 px-3 py-2 text-xs font-semibold text-center border-b-2 transition-all border-[var(--border)]", editScenario === 'after' ? "text-[var(--text)] bg-[var(--surface)] border-b-[#22c55e]" : "text-[var(--text2)] bg-[var(--surface2)] border-b-transparent hover:text-[var(--text)]")}
-                    onClick={() => setEditScenario('after')}
-                  >
-                    ✏️ After
-                  </button>
+                  {(videoEditorEnabled ? ['before', '25%', '50%', '75%', 'after'] : ['before', 'after']).map((scenarioKey) => (
+                    <button 
+                      key={scenarioKey}
+                      className={cn(
+                        "flex-1 px-3 py-2 text-[11px] font-semibold text-center border-r border-b-2 transition-all border-[var(--border)] uppercase tracking-wider",
+                        editScenario === scenarioKey 
+                          ? "text-[var(--text)] bg-[var(--surface)] border-b-[var(--accent)]" 
+                          : "text-[var(--text2)] bg-[var(--surface2)] border-b-transparent hover:text-[var(--text)]"
+                      )}
+                      onClick={() => setEditScenario(scenarioKey)}
+                    >
+                      {scenarioKey === 'before' ? 'Before' : scenarioKey === 'after' ? 'After' : scenarioKey}
+                    </button>
+                  ))}
                 </div>
               )}
 
@@ -1232,11 +1231,11 @@ export default function Editor() {
                 {inputMode === 'guided' ? (
                   <GuidedSetup onGenerate={(before, after) => {
                     setScenarios(s => ({
-                      ...s,
                       before: { ...s.before, flows: before.length > 0 ? before : [{ Source: '', Target: '', Value: '', Color: '' }] },
                       after: { ...s.after, flows: after.length > 0 ? after : [{ Source: '', Target: '', Value: '', Color: '' }] }
                     }));
                     setInputMode('table');
+                    if (videoEditorEnabled) setVideoEditorEnabled(false);
                   }} />
                 ) : inputMode === 'table' ? (
                   <div className="flex flex-col gap-2">
@@ -1330,6 +1329,27 @@ export default function Editor() {
                  )}
                </div>
 
+               {videoEditorEnabled && (
+                 <>
+                   {['25%', '50%', '75%'].map((step) => (
+                     <div key={step} className="flex flex-col items-center">
+                       <button 
+                         className={cn(
+                           "px-3.5 py-1 text-xs font-semibold rounded-[var(--radius)] border border-[var(--border)] transition-all",
+                           viewScenario === step ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "bg-[var(--surface2)] text-[var(--text2)] hover:border-[var(--text2)] hover:text-[var(--text)]"
+                         )}
+                         onClick={() => setViewScenario(step)}
+                       >
+                         {step}
+                       </button>
+                       {renderedPPUs[step] && (
+                         <span className="text-[9px] text-[var(--text3)] font-mono mt-1">{renderedPPUs[step]?.toFixed(2)} px/{config.valueUnit}</span>
+                       )}
+                     </div>
+                   ))}
+                 </>
+               )}
+
                <div className="flex flex-col items-center">
                  <button 
                    className={cn(
@@ -1346,18 +1366,38 @@ export default function Editor() {
                </div>
 
                <div className="flex items-center ml-2 pl-3 border-l border-[var(--border)] gap-2">
-                 <span className="text-[11px] font-medium text-[var(--text2)]">Sync views</span>
+                 <span className="text-[11px] font-medium text-[var(--text2)]">Sync Views</span>
                  <button 
                    onClick={toggleSyncViews}
                    className={cn(
                      "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
-                     isViewsSynced ? "bg-[#22c55e]" : "bg-[var(--border)]"
+                     isViewsSynced ? "bg-[var(--accent)]" : "bg-[var(--border)]"
                    )}
                  >
                    <span 
                      className={cn(
                        "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
                        isViewsSynced ? "translate-x-3" : "translate-x-0"
+                     )}
+                   />
+                 </button>
+               </div>
+
+               <div className="flex items-center ml-2 pl-3 border-l border-[var(--border)] gap-2">
+                 <span className={cn("text-[11px] font-medium transition-opacity", isViewsSynced ? "text-[var(--text2)]" : "text-[var(--text3)] opacity-50")}>Video Editor</span>
+                 <button 
+                   onClick={isViewsSynced ? toggleVideoEditor : undefined}
+                   disabled={!isViewsSynced}
+                   className={cn(
+                     "relative inline-flex h-4 w-7 shrink-0 rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none",
+                     !isViewsSynced ? "bg-[var(--border)] opacity-40 cursor-not-allowed" :
+                     videoEditorEnabled ? "bg-[var(--accent)] cursor-pointer" : "bg-[var(--border)] cursor-pointer"
+                   )}
+                 >
+                   <span 
+                     className={cn(
+                       "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                       videoEditorEnabled && isViewsSynced ? "translate-x-3" : "translate-x-0"
                      )}
                    />
                  </button>
@@ -1378,7 +1418,7 @@ export default function Editor() {
          {/* Diagram Area */}
          <div className="relative flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-[var(--bg)] scrollbar-hide">
            <div className="relative flex-1 min-h-0 min-w-0 p-4">
-             {(['before', 'after'] as const).map(scenarioKey => (
+             {(videoEditorEnabled ? ['before', '25%', '50%', '75%', 'after'] : ['before', 'after']).map(scenarioKey => (
                <div 
                  key={scenarioKey}
                  className={cn(
@@ -1423,10 +1463,10 @@ export default function Editor() {
            <button className="px-3 py-1 btn" style={{ fontSize: '11px' }} onClick={() => exportImage('svg')}><Download size={13} /> SVG</button>
            <div className="w-px h-4 mx-1 bg-[var(--border)]" />
            <button 
-             className="px-3 py-1 btn" 
+             className={cn("px-3 py-1 btn", !videoEditorEnabled && "opacity-40 cursor-not-allowed")} 
              style={{ fontSize: '11px' }}
              onClick={exportTransitionVideo}
-             disabled={exportingVideo}
+             disabled={exportingVideo || !videoEditorEnabled}
            >
              <Video size={13} /> {exportingVideo ? `Exporting (${videoProgress}%)` : 'Transition Video'}
            </button>
@@ -1485,7 +1525,22 @@ export default function Editor() {
               
               {videoDebugInfo.length > 0 && (
                 <details className="w-full mt-6 text-xs text-[var(--text2)]">
-                  <summary className="cursor-pointer font-medium mb-2 p-1 hover:bg-[var(--surface2)] rounded max-w-fit">Frame information</summary>
+                  <summary className="cursor-pointer font-medium mb-2 p-1 hover:bg-[var(--surface2)] rounded flex items-center justify-between">
+                    <span>Frame information</span>
+                    <button
+                      className="px-2 py-1 bg-[var(--surface3)] hover:bg-[var(--border)] rounded text-[var(--text)] transition-colors"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const header = ['Frame', 'PPU_n', 'NP_n', 'x', 'target', 'NP_corrected', 'PPU_after'].join('\t');
+                        const rows = videoDebugInfo.map(info => 
+                          [info.frame, info.ppu_n.toFixed(2), info.np_n.toFixed(1), info.x.toFixed(3), info.target.toFixed(1), info.np_corrected.toFixed(1), info.ppu_after.toFixed(2)].join('\t')
+                        );
+                        navigator.clipboard.writeText([header, ...rows].join('\n'));
+                      }}
+                    >
+                      Copy as TSV
+                    </button>
+                  </summary>
                   <div className="max-h-48 overflow-y-auto border border-[var(--border)] rounded bg-[var(--surface2)]">
                     <table className="w-full text-right p-2">
                       <thead className="sticky top-0 bg-[var(--surface)] shadow-sm">
