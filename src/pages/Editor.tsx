@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { Menu, Save, Upload, Download, RotateCcw, Video, Table as TableIcon, FileText, ChevronRight, Sun, Moon } from 'lucide-react';
+import { Menu, Save, Upload, Download, RotateCcw, Video, Table as TableIcon, FileText, ChevronRight, Sun, Moon, ArrowUp, ArrowDown } from 'lucide-react';
 import { Config, Scenario, Flow } from '../types';
 import { DEFAULT_FLOWS } from '../constants';
 import { SankeyDiagram } from '../components/SankeyDiagram';
@@ -152,6 +152,12 @@ export default function Editor() {
   const [dataSectionHeight, setDataSectionHeight] = useState(300);
   const [dataSectionOpen, setDataSectionOpen] = useState(true);
   const [inputMode, setInputMode] = useState<'table' | 'text' | 'guided'>('table');
+  const [localFlowText, setLocalFlowText] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLocalFlowText(null);
+  }, [editScenario, inputMode]);
+
   const [isViewsSynced, setIsViewsSynced] = useState(false);
   const [animating, setAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(3);
@@ -163,13 +169,13 @@ export default function Editor() {
     after: null 
   });
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    save: false,
-    theme: true,
+    save: true,
+    theme: false,
     thermal: false,
-    layout: false,
-    visual: false,
-    typography: false,
+    flows: false,
     nodes: false,
+    labels: false,
+    layout: false,
   });
 
   const activeScenario = scenarios[viewScenario];
@@ -694,6 +700,24 @@ export default function Editor() {
     updateScenario(editScenario, { flows: newFlows });
   };
 
+  const moveFlowUp = (index: number) => {
+    if (index === 0) return;
+    const newFlows = [...editScenarioData.flows];
+    const temp = newFlows[index];
+    newFlows[index] = newFlows[index - 1];
+    newFlows[index - 1] = temp;
+    updateScenario(editScenario, { flows: newFlows });
+  };
+
+  const moveFlowDown = (index: number) => {
+    if (index >= editScenarioData.flows.length - 2) return; // Don't swap with or past the empty trailing row
+    const newFlows = [...editScenarioData.flows];
+    const temp = newFlows[index];
+    newFlows[index] = newFlows[index + 1];
+    newFlows[index + 1] = temp;
+    updateScenario(editScenario, { flows: newFlows });
+  };
+
   const clearAllFlows = () => {
     updateScenario(editScenario, {
       flows: [{ Source: '', Target: '', Value: '', Color: '' }],
@@ -952,20 +976,160 @@ export default function Editor() {
             )}
           </div>
 
-          {/* Section: Visual Geometry */}
+          {/* Section: Flows */}
           <div className="border-b border-[var(--border)]">
             <div 
               className="flex items-center gap-2 px-3.5 py-2.5 cursor-pointer select-none text-[var(--text2)] text-[12px] font-medium tracking-wider uppercase hover:bg-[var(--surface2)] hover:text-[var(--text)]"
-              onClick={() => toggleSection('visual')}
+              onClick={() => toggleSection('flows')}
             >
-              <span>📏</span> Visual Geometry
-              <ChevronRight size={10} className={cn("ml-auto transition-transform opacity-50", openSections.visual && "rotate-90")} />
+              <span>🌊</span> Flows
+              <ChevronRight size={10} className={cn("ml-auto transition-transform opacity-50", openSections.flows && "rotate-90")} />
             </div>
-            {openSections.visual && (
+            {openSections.flows && (
               <div className="section-body">
                 <div>
                   <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
-                    Node Pad (Gap) <span className="float-right font-mono">{activeScenario.nodeSpacing ?? config.nodeSpacing}</span>
+                    Opacity <span className="float-right font-mono">{config.linkOpacity.toFixed(2)}</span>
+                  </label>
+                  <input type="range" min="0.05" max="1" step="0.05" value={config.linkOpacity} onChange={e => updateConfig({ linkOpacity: parseFloat(e.target.value) })} className="w-full" />
+                </div>
+                <div>
+                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
+                    Arrowhead <span className="float-right font-mono">{config.arrowSize}</span>
+                  </label>
+                  <input type="range" min="0" max="50" value={config.arrowSize} onChange={e => updateConfig({ arrowSize: parseInt(e.target.value) })} className="w-full" />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section: Nodes */}
+          <div className="border-b border-[var(--border)]">
+            <div 
+              className="flex items-center gap-2 px-3.5 py-2.5 cursor-pointer select-none text-[var(--text2)] text-[12px] font-medium tracking-wider uppercase hover:bg-[var(--surface2)] hover:text-[var(--text)]"
+              onClick={() => toggleSection('nodes')}
+            >
+              <span>🟣</span> Nodes
+              <ChevronRight size={10} className={cn("ml-auto transition-transform opacity-50", openSections.nodes && "rotate-90")} />
+            </div>
+            {openSections.nodes && (
+              <div className="section-body">
+                <div>
+                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
+                    Node Width <span className="float-right font-mono">{config.nodeThickness}</span>
+                  </label>
+                  <input type="range" min="5" max="50" value={config.nodeThickness} onChange={e => updateConfig({ nodeThickness: parseInt(e.target.value) })} className="w-full" />
+                </div>
+                <div>
+                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">Default Color</label>
+                  <input type="color" value={config.defaultNodeColor} onChange={e => updateConfig({ defaultNodeColor: e.target.value })} className="w-full h-7" />
+                </div>
+                <div className="mt-2 data-table-wrap max-h-[300px] border border-[var(--border)] rounded-[var(--radius)] overflow-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-[var(--surface2)] sticky top-0">
+                        <th className="p-1.5 text-left font-medium text-[var(--text2)]">Node</th>
+                        <th className="p-1.5 text-left font-medium text-[var(--text2)]">Color</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {labels.map(l => (
+                        <tr key={l} className="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--bg)]">
+                          <td className="p-1.5 truncate max-w-[100px]" title={l}>{l}</td>
+                          <td className="p-1.5">
+                            <div className="flex gap-1.5 items-center">
+                              <input 
+                                type="color"
+                                value={
+                                  (() => {
+                                    /* Handle hex value for color picker */
+                                    const val = editScenarioData.nodeColorOverrides[l];
+                                    if (val) {
+                                      // Only pass 6-char hex to color picker for compatibility
+                                      if (/^#[0-9A-Fa-f]{6}$/.test(val)) return val;
+                                      
+                                      // Some basic conversion for named colors could go here, 
+                                      // but color pickers just need a valid hex. Defaulting to black if not hex.
+                                    }
+                                    return '#000000';
+                                  })()
+                                }
+                                onChange={e => {
+                                  const overrides = { ...editScenarioData.nodeColorOverrides, [l]: e.target.value };
+                                  updateScenario(editScenario, { nodeColorOverrides: overrides });
+                                }}
+                                className="w-5 h-5 p-0 border-0 cursor-pointer overflow-hidden rounded bg-transparent flex-shrink-0"
+                                style={{ WebkitAppearance: 'none' }}
+                              />
+                              <input 
+                                type="text" 
+                                value={editScenarioData.nodeColorOverrides[l] || ''} 
+                                placeholder={config.defaultNodeColor}
+                                onChange={e => {
+                                  const overrides = { ...editScenarioData.nodeColorOverrides, [l]: e.target.value };
+                                  updateScenario(editScenario, { nodeColorOverrides: overrides });
+                                }}
+                                className="w-full p-1 bg-transparent border border-transparent focus:border-[var(--border)] focus:bg-[var(--surface)] transition-all rounded outline-none"
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section: Labels */}
+          <div className="border-b border-[var(--border)]">
+            <div 
+              className="flex items-center gap-2 px-3.5 py-2.5 cursor-pointer select-none text-[var(--text2)] text-[12px] font-medium tracking-wider uppercase hover:bg-[var(--surface2)] hover:text-[var(--text)]"
+              onClick={() => toggleSection('labels')}
+            >
+              <span>🖋️</span> Labels
+              <ChevronRight size={10} className={cn("ml-auto transition-transform opacity-50", openSections.labels && "rotate-90")} />
+            </div>
+            {openSections.labels && (
+              <div className="section-body">
+                <div>
+                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">Value Unit</label>
+                  <input type="text" value={config.valueUnit} onChange={e => updateConfig({ valueUnit: e.target.value })} className="w-full" />
+                </div>
+                <div>
+                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
+                    Font Size <span className="float-right font-mono">{config.labelSize}</span>
+                  </label>
+                  <input type="range" min="8" max="30" value={config.labelSize} onChange={e => updateConfig({ labelSize: parseInt(e.target.value) })} className="w-full" />
+                </div>
+                <div>
+                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
+                    Font Color
+                  </label>
+                  <div className="flex gap-2">
+                    <input type="color" value={config.labelColor} onChange={e => updateConfig({ labelColor: e.target.value })} className="w-9 h-7 p-0.5 border border-[var(--border)] rounded-[var(--radius)]" />
+                    <input type="text" value={config.labelColor} onChange={e => updateConfig({ labelColor: e.target.value })} className="flex-1" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section: Layout */}
+          <div className="border-b border-[var(--border)]">
+            <div 
+              className="flex items-center gap-2 px-3.5 py-2.5 cursor-pointer select-none text-[var(--text2)] text-[12px] font-medium tracking-wider uppercase hover:bg-[var(--surface2)] hover:text-[var(--text)]"
+              onClick={() => toggleSection('layout')}
+            >
+              <span>📐</span> Layout
+              <ChevronRight size={10} className={cn("ml-auto transition-transform opacity-50", openSections.layout && "rotate-90")} />
+            </div>
+            {openSections.layout && (
+              <div className="section-body">
+                <div>
+                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
+                    Spacing <span className="float-right font-mono">{activeScenario.nodeSpacing ?? config.nodeSpacing}</span>
                   </label>
                   <input type="range" min="0" max="200" value={activeScenario.nodeSpacing ?? config.nodeSpacing} onChange={e => {
                     const val = parseInt(e.target.value);
@@ -975,37 +1139,6 @@ export default function Editor() {
                     }));
                   }} className="w-full" />
                 </div>
-                <div>
-                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
-                    Node Width <span className="float-right font-mono">{config.nodeThickness}</span>
-                  </label>
-                  <input type="range" min="5" max="50" value={config.nodeThickness} onChange={e => updateConfig({ nodeThickness: parseInt(e.target.value) })} className="w-full" />
-                </div>
-                <div>
-                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
-                    Link Opacity <span className="float-right font-mono">{config.linkOpacity.toFixed(2)}</span>
-                  </label>
-                  <input type="range" min="0.05" max="1" step="0.05" value={config.linkOpacity} onChange={e => updateConfig({ linkOpacity: parseFloat(e.target.value) })} className="w-full" />
-                </div>
-                <div>
-                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
-                    Arrow Head <span className="float-right font-mono">{config.arrowSize}</span>
-                  </label>
-                  <input type="range" min="0" max="50" value={config.arrowSize} onChange={e => updateConfig({ arrowSize: parseInt(e.target.value) })} className="w-full" />
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="border-b border-[var(--border)]">
-            <div 
-              className="flex items-center gap-2 px-3.5 py-2.5 cursor-pointer select-none text-[var(--text2)] text-[12px] font-medium tracking-wider uppercase hover:bg-[var(--surface2)] hover:text-[var(--text)]"
-              onClick={() => toggleSection('layout')}
-            >
-              <span>📐</span> Layout & Scaling
-              <ChevronRight size={10} className={cn("ml-auto transition-transform opacity-50", openSections.layout && "rotate-90")} />
-            </div>
-            {openSections.layout && (
-              <div className="section-body">
                 <div>
                   <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">Aspect Ratio</label>
                   <select 
@@ -1070,88 +1203,6 @@ export default function Editor() {
                     <option value="perpendicular">Perpendicular</option>
                     <option value="freeform">Freeform</option>
                   </select>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Section: Typography & Canvas */}
-          <div className="border-b border-[var(--border)]">
-            <div 
-              className="flex items-center gap-2 px-3.5 py-2.5 cursor-pointer select-none text-[var(--text2)] text-[12px] font-medium tracking-wider uppercase hover:bg-[var(--surface2)] hover:text-[var(--text)]"
-              onClick={() => toggleSection('typography')}
-            >
-              <span>🖋️</span> Typography & Canvas
-              <ChevronRight size={10} className={cn("ml-auto transition-transform opacity-50", openSections.typography && "rotate-90")} />
-            </div>
-            {openSections.typography && (
-              <div className="section-body">
-                <div>
-                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
-                    Font Size <span className="float-right font-mono">{config.labelSize}</span>
-                  </label>
-                  <input type="range" min="8" max="30" value={config.labelSize} onChange={e => updateConfig({ labelSize: parseInt(e.target.value) })} className="w-full" />
-                </div>
-                <div>
-                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
-                    Font Color
-                  </label>
-                  <div className="flex gap-2">
-                    <input type="color" value={config.labelColor} onChange={e => updateConfig({ labelColor: e.target.value })} className="w-9 h-7 p-0.5 border border-[var(--border)] rounded-[var(--radius)]" />
-                    <input type="text" value={config.labelColor} onChange={e => updateConfig({ labelColor: e.target.value })} className="flex-1" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">Value Unit</label>
-                  <input type="text" value={config.valueUnit} onChange={e => updateConfig({ valueUnit: e.target.value })} className="w-full" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Section: Node Colors */}
-          <div className="border-b border-[var(--border)]">
-            <div 
-              className="flex items-center gap-2 px-3.5 py-2.5 cursor-pointer select-none text-[var(--text2)] text-[12px] font-medium tracking-wider uppercase hover:bg-[var(--surface2)] hover:text-[var(--text)]"
-              onClick={() => toggleSection('nodes')}
-            >
-              <span>🟣</span> Node Colors
-              <ChevronRight size={10} className={cn("ml-auto transition-transform opacity-50", openSections.nodes && "rotate-90")} />
-            </div>
-            {openSections.nodes && (
-              <div className="section-body">
-                <div>
-                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">Default Node Color</label>
-                  <input type="color" value={config.defaultNodeColor} onChange={e => updateConfig({ defaultNodeColor: e.target.value })} className="w-full h-7" />
-                </div>
-                <div className="mt-2 data-table-wrap max-h-[300px] border border-[var(--border)] rounded-[var(--radius)] overflow-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-[var(--surface2)] sticky top-0">
-                        <th className="p-1.5 text-left font-medium text-[var(--text2)]">Node</th>
-                        <th className="p-1.5 text-left font-medium text-[var(--text2)]">Color</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {labels.map(l => (
-                        <tr key={l} className="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--bg)]">
-                          <td className="p-1.5 truncate max-w-[100px]" title={l}>{l}</td>
-                          <td className="p-1.5">
-                            <input 
-                              type="text" 
-                              value={editScenarioData.nodeColorOverrides[l] || ''} 
-                              placeholder={config.defaultNodeColor}
-                              onChange={e => {
-                                const overrides = { ...editScenarioData.nodeColorOverrides, [l]: e.target.value };
-                                updateScenario(editScenario, { nodeColorOverrides: overrides });
-                              }}
-                              className="w-full p-1"
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
                 </div>
               </div>
             )}
@@ -1265,9 +1316,25 @@ export default function Editor() {
                               <td className="p-0"><input type="text" value={flow.Target} onPaste={e => handleTablePaste(e, i, 'Target')} onChange={e => handleFlowChange(i, 'Target', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
                               <td className="p-0"><input type="text" value={flow.Value} onPaste={e => handleTablePaste(e, i, 'Value')} onChange={e => handleFlowChange(i, 'Value', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
                               <td className="p-0"><input type="text" value={flow.Color} onPaste={e => handleTablePaste(e, i, 'Color')} onChange={e => handleFlowChange(i, 'Color', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
-                              <td className="p-1 text-center">
+                              <td className="p-1 flex items-center justify-center gap-1">
                                 {(i !== editScenarioData.flows.length - 1 || flow.Source) && (
-                                  <button onClick={() => deleteFlow(i)} className="text-[var(--text3)] hover:text-[var(--danger)] text-lg">×</button>
+                                  <>
+                                    <button 
+                                      onClick={() => moveFlowUp(i)} 
+                                      disabled={i === 0}
+                                      className={cn("p-0.5 rounded", i === 0 ? "opacity-30 cursor-not-allowed" : "text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--surface3)]")}
+                                    >
+                                      <ArrowUp size={14} />
+                                    </button>
+                                    <button 
+                                      onClick={() => moveFlowDown(i)} 
+                                      disabled={i >= editScenarioData.flows.length - 2}
+                                      className={cn("p-0.5 rounded", i >= editScenarioData.flows.length - 2 ? "opacity-30 cursor-not-allowed" : "text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--surface3)]")}
+                                    >
+                                      <ArrowDown size={14} />
+                                    </button>
+                                    <button onClick={() => deleteFlow(i)} className="text-[var(--text3)] hover:text-[var(--danger)] text-lg px-1 text-center leading-none">×</button>
+                                  </>
                                 )}
                               </td>
                             </tr>
@@ -1281,8 +1348,9 @@ export default function Editor() {
                     <span className="text-[10.5px] italic text-[var(--text3)]">Format: <code className="font-mono">Source [Value] Target Color</code> — one per line</span>
                     <textarea 
                       className="flex-1 w-full p-2 font-mono text-xs resize-none min-h-[150px]"
-                      value={editScenarioData.flows.map(f => `${f.Source} [${f.Value}] ${f.Target} ${f.Color}`.trim()).join('\n')}
+                      value={localFlowText !== null ? localFlowText : editScenarioData.flows.map(f => `${f.Source} [${f.Value}] ${f.Target} ${f.Color}`.trim()).join('\n')}
                       onChange={e => {
+                        setLocalFlowText(e.target.value);
                         const lines = e.target.value.split('\n');
                         const newFlows = lines.map(line => {
                           const m = line.match(/^(.+?)\s*\[(.+?)\]\s*(.+?)(?:\s+(\S+))?$/);
