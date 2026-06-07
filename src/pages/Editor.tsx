@@ -1,11 +1,11 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { Menu, Save, Upload, Download, RotateCcw, Video, Table as TableIcon, FileText, ChevronRight, Sun, Moon, ArrowUp, ArrowDown } from 'lucide-react';
+import { Menu, Save, Upload, Download, RotateCcw, Video, Table as TableIcon, FileText, ChevronRight, Sun, Moon, ArrowUp, ArrowDown, HelpCircle } from 'lucide-react';
 import { Config, Scenario, Flow } from '../types';
 import { DEFAULT_FLOWS } from '../constants';
 import { SankeyDiagram } from '../components/SankeyDiagram';
 import { cn } from '../lib/utils';
 import { GuidedSetup } from '../components/GuidedSetup';
-import { buildSankeyData, computeAlignedX, resolveNodeColor, interpolateRgb, getExportDimensions, computeSankeyMetrics } from '../lib/sankeyUtils';
+import { buildSankeyData, computeAlignedX, resolveNodeColor, interpolateRgb, getExportDimensions, computeSankeyMetrics, computePreservedPositions } from '../lib/sankeyUtils';
 import Plotly from 'plotly.js-dist-min';
 import * as gifenc from 'gifenc';
 
@@ -139,6 +139,9 @@ export default function Editor() {
             after: { ...INITIAL_SCENARIOS.after, flows: data.flows },
           });
         }
+        if (data.preserveInputOrder !== undefined) {
+          setPreserveInputOrder(data.preserveInputOrder);
+        }
         localStorage.removeItem('sankeyloop_load_example');
       } catch (e) {
         console.error('Failed to load example', e);
@@ -146,6 +149,9 @@ export default function Editor() {
     }
   }, []);
   const [videoEditorEnabled, setVideoEditorEnabled] = useState(false);
+  const [preserveInputOrder, setPreserveInputOrder] = useState(false);
+  const [activeHelpFeature, setActiveHelpFeature] = useState<'sync' | 'video' | 'pio' | null>(null);
+  const [showDonationModal, setShowDonationModal] = useState(false);
   const [editScenario, setEditScenario] = useState<string>('before');
   const [viewScenario, setViewScenario] = useState<string>('before');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -379,6 +385,9 @@ export default function Editor() {
             after: { ...INITIAL_SCENARIOS.after, flows: data.flows },
           });
         }
+        if (data.preserveInputOrder !== undefined) {
+          setPreserveInputOrder(data.preserveInputOrder);
+        }
       } catch (err) {
         alert('Failed to import config');
       }
@@ -388,7 +397,7 @@ export default function Editor() {
   };
 
   const handleExport = () => {
-    const data = { config, scenarios };
+    const data = { config, scenarios, preserveInputOrder };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -412,6 +421,17 @@ export default function Editor() {
     } catch (err) {
       console.error('Export failed:', err);
     }
+  };
+  const openDonationPopup = () => {
+    const width = 500;
+    const height = 650;
+    const left = (window.screen.width - width) / 2;
+    const top = (window.screen.height - height) / 2;
+    window.open(
+      'https://revolut.me/tsanzdesantamaria',
+      'RevolutDonation',
+      `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`
+    );
   };
 
   const [exportingVideo, setExportingVideo] = useState(false);
@@ -527,8 +547,12 @@ export default function Editor() {
           return override ? resolveNodeColor(override, resolvedDefault) : resolvedDefault;
         });
 
-        const posS = sStart.hasDraggedNodes ? sStart.nodePositions : (sStart.nativePositions || sStart.nodePositions);
-        const posE = sEnd.hasDraggedNodes ? sEnd.nodePositions : (sEnd.nativePositions || sEnd.nodePositions);
+        const posS = preserveInputOrder 
+          ? computePreservedPositions(sStart, config)
+          : (sStart.hasDraggedNodes ? sStart.nodePositions : (sStart.nativePositions || sStart.nodePositions));
+        const posE = preserveInputOrder 
+          ? computePreservedPositions(sEnd, config)
+          : (sEnd.hasDraggedNodes ? sEnd.nodePositions : (sEnd.nativePositions || sEnd.nodePositions));
 
         const xPos = labels.map(l => {
           const pS = posS[l];
@@ -579,7 +603,7 @@ export default function Editor() {
         const sankeyTrace: any = {
           type: 'sankey',
           orientation: config.orientation,
-          arrangement: config.nodeArrangement,
+          arrangement: preserveInputOrder ? 'freeform' : config.nodeArrangement,
           textfont: { color: config.labelColor, size: Math.max(8, scaledLabelSize) },
           node: nodeSpec,
           link: { 
@@ -1166,6 +1190,13 @@ export default function Editor() {
                       />
                     </div>
                     <div>
+                      <button 
+                              onClick={clearAllFlows}
+                              className="px-1.5 py-0.5 border border-red-500 rounded text-[10px] font-semibold text-red-500 hover:bg-red-500 hover:text-white transition-colors"
+                            >
+                              Clear
+                            </button>
+
                       <label className="block text-[9.5px] mb-1 font-medium text-[var(--text3)] uppercase">Height (px)</label>
                       <input 
                         type="number" 
@@ -1433,43 +1464,88 @@ export default function Editor() {
                  )}
                </div>
 
-               <div className="flex items-center ml-2 pl-3 border-l border-[var(--border)] gap-2">
-                 <span className="text-[11px] font-medium text-[var(--text2)]">Sync Views</span>
-                 <button 
-                   onClick={toggleSyncViews}
-                   className={cn(
-                     "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
-                     isViewsSynced ? "bg-[var(--accent)]" : "bg-[var(--border)]"
-                   )}
-                 >
-                   <span 
-                     className={cn(
-                       "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-                       isViewsSynced ? "translate-x-3" : "translate-x-0"
-                     )}
-                   />
-                 </button>
-               </div>
+                <div className="flex items-center ml-2 pl-3 border-l border-[var(--border)] gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-medium text-[var(--text2)]">Preserve Input Order</span>
+                    <button 
+                      onClick={() => setActiveHelpFeature('pio')}
+                      className="text-[var(--text3)] hover:text-[var(--text)] transition-colors flex items-center"
+                      title="What is this?"
+                    >
+                      <HelpCircle size={13} />
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => setPreserveInputOrder(prev => !prev)}
+                    className={cn(
+                      "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                      preserveInputOrder ? "bg-[var(--accent)]" : "bg-[var(--border)]"
+                    )}
+                  >
+                    <span 
+                      className={cn(
+                        "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                        preserveInputOrder ? "translate-x-3" : "translate-x-0"
+                      )}
+                    />
+                  </button>
+                </div>
 
-               <div className="flex items-center ml-2 pl-3 border-l border-[var(--border)] gap-2">
-                 <span className={cn("text-[11px] font-medium transition-opacity", isViewsSynced ? "text-[var(--text2)]" : "text-[var(--text3)] opacity-50")}>Video Editor</span>
-                 <button 
-                   onClick={isViewsSynced ? toggleVideoEditor : undefined}
-                   disabled={!isViewsSynced}
-                   className={cn(
-                     "relative inline-flex h-4 w-7 shrink-0 rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none",
-                     !isViewsSynced ? "bg-[var(--border)] opacity-40 cursor-not-allowed" :
-                     videoEditorEnabled ? "bg-[var(--accent)] cursor-pointer" : "bg-[var(--border)] cursor-pointer"
-                   )}
-                 >
-                   <span 
-                     className={cn(
-                       "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-                       videoEditorEnabled && isViewsSynced ? "translate-x-3" : "translate-x-0"
-                     )}
-                   />
-                 </button>
-               </div>
+                <div className="flex items-center ml-2 pl-3 border-l border-[var(--border)] gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-medium text-[var(--text2)]">Sync Views</span>
+                    <button 
+                      onClick={() => setActiveHelpFeature('sync')}
+                      className="text-[var(--text3)] hover:text-[var(--text)] transition-colors flex items-center"
+                      title="What is this?"
+                    >
+                      <HelpCircle size={13} />
+                    </button>
+                  </div>
+                  <button 
+                    onClick={toggleSyncViews}
+                    className={cn(
+                      "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                      isViewsSynced ? "bg-[var(--accent)]" : "bg-[var(--border)]"
+                    )}
+                  >
+                    <span 
+                      className={cn(
+                        "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                        isViewsSynced ? "translate-x-3" : "translate-x-0"
+                      )}
+                    />
+                  </button>
+                </div>
+
+                <div className="flex items-center ml-2 pl-3 border-l border-[var(--border)] gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className={cn("text-[11px] font-medium transition-opacity", isViewsSynced ? "text-[var(--text2)]" : "text-[var(--text3)] opacity-50")}>Video Editor</span>
+                    <button 
+                      onClick={() => setActiveHelpFeature('video')}
+                      className="text-[var(--text3)] hover:text-[var(--text)] transition-colors flex items-center"
+                      title="What is this?"
+                    >
+                      <HelpCircle size={13} />
+                    </button>
+                  </div>
+                  <button 
+                    onClick={isViewsSynced ? toggleVideoEditor : undefined}
+                    disabled={!isViewsSynced}
+                    className={cn(
+                      "relative inline-flex h-4 w-7 shrink-0 rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none",
+                      !isViewsSynced ? "bg-[var(--border)] opacity-40 cursor-not-allowed" :
+                      videoEditorEnabled ? "bg-[var(--accent)] cursor-pointer" : "bg-[var(--border)] cursor-pointer"
+                    )}
+                  >
+                    <span 
+                      className={cn(
+                        "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                        videoEditorEnabled && isViewsSynced ? "translate-x-3" : "translate-x-0"
+                      )}
+                    />
+                  </button>
+                </div>
 
                <div className="ml-auto flex items-center pr-2">
                  <button 
@@ -1486,41 +1562,54 @@ export default function Editor() {
          {/* Diagram Area */}
          <div className="relative flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-[var(--bg)] scrollbar-hide">
            <div className="relative flex-1 min-h-0 min-w-0 p-4">
-             {(videoEditorEnabled ? ['before', '25%', '50%', '75%', 'after'] : ['before', 'after']).map(scenarioKey => (
-               <div 
-                 key={scenarioKey}
-                 className={cn(
-                   "absolute inset-0 p-4 transition-opacity duration-300",
-                   viewScenario === scenarioKey ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
-                 )}
-               >
-                 <SankeyDiagram 
-                   scenario={scenarios[scenarioKey]}
-                   config={config}
-                   onNodeDrag={handleNodeDrag}
-                   animating={animating && viewScenario === scenarioKey}
-                   animSpeed={animSpeed}
-                   onRenderedPPU={(val) => {
-                     setRenderedPPUs(prev => {
-                       if (prev[scenarioKey] === null) return { ...prev, [scenarioKey]: val };
-                       if (Math.abs(prev[scenarioKey]! - val) > 0.01) return { ...prev, [scenarioKey]: val };
-                       return prev;
-                     });
-                   }}
-                   onRenderedPositions={(pos) => {
-                     setScenarios(prev => {
-                       const currentPosStr = JSON.stringify(prev[scenarioKey].nativePositions || {});
-                       const newPosStr = JSON.stringify(pos || {});
-                       if (currentPosStr === newPosStr) return prev;
-                       return {
-                         ...prev,
-                         [scenarioKey]: { ...prev[scenarioKey], nativePositions: pos }
-                       };
-                     });
-                   }}
-                 />
-               </div>
-             ))}
+             {(videoEditorEnabled ? ['before', '25%', '50%', '75%', 'after'] : ['before', 'after']).map(scenarioKey => {
+                const baseScenario = scenarios[scenarioKey];
+                const displayScenario = preserveInputOrder ? {
+                  ...baseScenario,
+                  nodePositions: computePreservedPositions(baseScenario, config),
+                  hasDraggedNodes: true
+                } : baseScenario;
+
+                return (
+                  <div 
+                    key={scenarioKey}
+                    className={cn(
+                      "absolute inset-0 p-4 transition-opacity duration-300",
+                      viewScenario === scenarioKey ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
+                    )}
+                  >
+                    <SankeyDiagram 
+                      scenario={displayScenario}
+                      config={config}
+                      preserveInputOrder={preserveInputOrder}
+                      onNodeDrag={(positions) => {
+                        setPreserveInputOrder(false);
+                        handleNodeDrag(positions);
+                      }}
+                      animating={animating && viewScenario === scenarioKey}
+                      animSpeed={animSpeed}
+                      onRenderedPPU={(val) => {
+                        setRenderedPPUs(prev => {
+                          if (prev[scenarioKey] === null) return { ...prev, [scenarioKey]: val };
+                          if (Math.abs(prev[scenarioKey]! - val) > 0.01) return { ...prev, [scenarioKey]: val };
+                          return prev;
+                        });
+                      }}
+                      onRenderedPositions={(pos) => {
+                        setScenarios(prev => {
+                          const currentPosStr = JSON.stringify(prev[scenarioKey].nativePositions || {});
+                          const newPosStr = JSON.stringify(pos || {});
+                          if (currentPosStr === newPosStr) return prev;
+                          return {
+                            ...prev,
+                            [scenarioKey]: { ...prev[scenarioKey], nativePositions: pos }
+                          };
+                        });
+                      }}
+                    />
+                  </div>
+                );
+              })}
            </div>
          </div>
  
@@ -1537,6 +1626,14 @@ export default function Editor() {
              disabled={exportingVideo || !videoEditorEnabled}
            >
              <Video size={13} /> {exportingVideo ? `Exporting (${videoProgress}%)` : 'Transition Video'}
+           </button>
+           
+           <button 
+             onClick={() => setShowDonationModal(true)}
+             className="ml-auto flex items-center gap-1.5 px-3 py-1 rounded-[var(--radius)] text-[11px] font-semibold bg-[#ff813f] hover:bg-[#ff6c24] text-white transition-colors border-0 cursor-pointer shadow-sm"
+             style={{ height: '24px' }}
+           >
+             ☕ Buy me a coffee
            </button>
          </div>
  
@@ -1639,6 +1736,139 @@ export default function Editor() {
                   </div>
                 </details>
               )}
+            </div>
+          </div>
+        )}
+
+        {activeHelpFeature && (
+          <div 
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={() => setActiveHelpFeature(null)}
+          >
+            <div 
+              className="bg-[var(--surface)] border border-[var(--border)] p-6 rounded-xl shadow-2xl max-w-md w-full relative"
+              onClick={e => e.stopPropagation()}
+            >
+              <button 
+                className="absolute top-4 right-4 text-[var(--text3)] hover:text-[var(--text)] text-lg leading-none"
+                onClick={() => setActiveHelpFeature(null)}
+              >
+                ×
+              </button>
+              
+              <div className="flex items-center gap-2.5 mb-3">
+                <span className="text-xl">
+                  {activeHelpFeature === 'pio' ? '📐' : activeHelpFeature === 'sync' ? '🔄' : '🎬'}
+                </span>
+                <h3 className="text-[var(--text)] text-lg font-semibold tracking-tight text-white">
+                  {activeHelpFeature === 'pio' && 'Preserve Input Order'}
+                  {activeHelpFeature === 'sync' && 'Sync Views'}
+                  {activeHelpFeature === 'video' && 'Video Editor'}
+                </h3>
+              </div>
+              
+              <div className="text-[var(--text2)] space-y-3 text-[12.5px] leading-relaxed">
+                {activeHelpFeature === 'pio' && (
+                  <>
+                    <p>
+                      Forces nodes and links to match the sequence defined in your flow table.
+                    </p>
+                    <p>
+                      <strong>How it works:</strong> It stacks nodes vertically within each column in the order they first appear. It also applies sub-pixel tie-breakers to ensure that long bypass links flow along the outer edges of the canvas without crossing intermediate links.
+                    </p>
+                    <p className="italic text-[var(--text3)]">
+                      Note: You can still drag nodes freely while this is active. Dragging a node will save its custom coordinates and turn off this layout mode automatically.
+                    </p>
+                  </>
+                )}
+                {activeHelpFeature === 'sync' && (
+                  <>
+                    <p>
+                      Synchronizes the layouts and node structures of the <strong>Before</strong> and <strong>After</strong> scenarios.
+                    </p>
+                    <p>
+                      <strong>How it works:</strong> Any node present in only one scenario is added as a "phantom" node (with zero value) in the other.
+                    </p>
+                    <p>
+                      Activating this instantly copies the layout positions of your currently active view onto the other view. From that point on, dragging a node in one diagram automatically updates its position in both diagrams, keeping them perfectly aligned.
+                    </p>
+                  </>
+                )}
+                {activeHelpFeature === 'video' && (
+                  <>
+                    <p>
+                      Enables state transitions and exports them as animations.
+                    </p>
+                    <p>
+                      <strong>How it works:</strong> It automatically generates intermediate transition steps (25%, 50%, 75%) between your Before and After diagrams.
+                    </p>
+                    <p>
+                      This allows you to preview how the energy/material flows shift dynamically and export a smooth, high-fidelity transition GIF.
+                    </p>
+                    <p className="italic text-[var(--text3)] font-medium">
+                      Requires "Sync Views" to be enabled first, so that the two diagrams have a matching set of nodes to animate.
+                    </p>
+                  </>
+                )}
+              </div>
+              
+              <div className="mt-6 flex justify-end">
+                <button 
+                  className="px-4 py-1.5 rounded-[var(--radius)] font-medium bg-[var(--accent)] text-white hover:opacity-90 transition-opacity text-xs"
+                  onClick={() => setActiveHelpFeature(null)}
+                >
+                  Got it
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {showDonationModal && (
+          <div 
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={() => setShowDonationModal(false)}
+          >
+            <div 
+              className="bg-[var(--surface)] border border-[var(--border)] p-6 rounded-xl shadow-2xl max-w-sm w-full relative text-center"
+              onClick={e => e.stopPropagation()}
+            >
+              <button 
+                className="absolute top-4 right-4 text-[var(--text3)] hover:text-[var(--text)] text-lg leading-none"
+                onClick={() => setShowDonationModal(false)}
+              >
+                ×
+              </button>
+              
+              <div className="text-3xl mb-3">☕</div>
+              <h3 className="text-[var(--text)] text-lg font-semibold tracking-tight text-white mb-2">
+                Thank you for supporting this website!
+              </h3>
+              <p className="text-[var(--text2)] text-[12px] leading-relaxed mb-6">
+                Please enter the amount you want to donate in the secure Revolut payment window.
+              </p>
+              
+              <div className="flex flex-col gap-2">
+                <button 
+                  className="w-full py-2 rounded-[var(--radius)] font-semibold bg-[#ff813f] hover:bg-[#ff6c24] text-white transition-colors border-0 cursor-pointer text-xs shadow-md"
+                  onClick={() => {
+                    openDonationPopup();
+                    setShowDonationModal(false);
+                  }}
+                >
+                  Open Secure Payment Window
+                </button>
+                <button 
+                  className="w-full py-2 rounded-[var(--radius)] font-medium border border-[var(--border)] bg-transparent text-[var(--text2)] hover:bg-[var(--surface2)] hover:text-[var(--text)] cursor-pointer transition-colors text-xs"
+                  onClick={() => setShowDonationModal(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+              
+              <p className="text-[var(--text3)] text-[10px] mt-4 leading-normal">
+                🔒 Payment processed securely by Revolut. Payment portals cannot be embedded directly inside other websites for anti-phishing protection.
+              </p>
             </div>
           </div>
         )}

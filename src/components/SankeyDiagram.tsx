@@ -11,6 +11,7 @@ interface SankeyDiagramProps {
   animSpeed: number;
   onRenderedPositions?: (positions: Record<string, { x: number; y: number }>) => void;
   onRenderedPPU?: (ppu: number) => void;
+  preserveInputOrder?: boolean;
 }
 
 export const SankeyDiagram: React.FC<SankeyDiagramProps> = ({
@@ -20,7 +21,8 @@ export const SankeyDiagram: React.FC<SankeyDiagramProps> = ({
   animating,
   animSpeed,
   onRenderedPositions,
-  onRenderedPPU
+  onRenderedPPU,
+  preserveInputOrder
 }) => {
   const outerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -176,7 +178,7 @@ export const SankeyDiagram: React.FC<SankeyDiagramProps> = ({
     const sankeyTrace: any = {
       type: 'sankey',
       orientation: config.orientation,
-      arrangement: config.nodeArrangement,
+      arrangement: preserveInputOrder ? 'freeform' : config.nodeArrangement,
       textfont: { color: config.labelColor, size: Math.max(8, scaledLabelSize) },
       node: nodeSpec,
       link: {

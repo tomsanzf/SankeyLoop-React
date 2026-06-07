@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, useAnimation, useInView } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Linkedin, Mail } from 'lucide-react';
@@ -88,6 +88,7 @@ const EXAMPLES: any = {
 
 export default function Landing() {
   const navigate = useNavigate();
+  const [showDonationModal, setShowDonationModal] = useState(false);
 
   const loadExample = (key: string) => {
     const data = EXAMPLES[key];
@@ -98,6 +99,18 @@ export default function Landing() {
     } catch(e) {
       navigate('/app');
     }
+  };
+
+  const openDonationPopup = () => {
+    const width = 500;
+    const height = 650;
+    const left = (window.screen.width - width) / 2;
+    const top = (window.screen.height - height) / 2;
+    window.open(
+      'https://revolut.me/tsanzdesantamaria',
+      'RevolutDonation',
+      `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`
+    );
   };
 
   return (
@@ -114,8 +127,14 @@ export default function Landing() {
           <a href="mailto:tomsanzf@gmail.com" className="text-[13px] font-medium text-[#a09d98] no-underline hover:text-[#f0ede8] transition-colors">Contact</a>
         </div>
         <button 
+          onClick={() => setShowDonationModal(true)}
+          className="ml-auto bg-transparent border border-[#ff813f] text-[#ff813f] hover:bg-[#ff813f] hover:text-white px-[14px] py-[6px] rounded-md text-[12px] font-semibold transition-all whitespace-nowrap cursor-pointer"
+        >
+          ☕ Buy me a coffee
+        </button>
+        <button 
           onClick={() => navigate('/app')}
-          className="ml-auto md:ml-0 bg-[#e8541a] text-white px-[18px] py-[7px] rounded-md text-[13px] font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+          className="bg-[#e8541a] text-white px-[18px] py-[7px] rounded-md text-[13px] font-semibold hover:opacity-90 transition-opacity whitespace-nowrap cursor-pointer"
         >
           Open App →
         </button>
@@ -368,49 +387,73 @@ export default function Landing() {
             <FeatureCard 
               icon="🌡️" 
               title="Thermal gradient colors" 
-              desc="Assign a temperature to each flow. Hot streams glow red, cold streams turn blue — automatically." 
+              desc="Assign temperatures to each flow. Hot streams glow red, cold streams turn blue — automatically." 
             />
             <FeatureCard 
-              icon="🖱️" 
-              title="Drag & remember" 
-              desc="Drag any node to where it belongs. Change colors, opacity, or fonts — nodes stay exactly where you put them." 
+              icon="🆚" 
+              title="Before & After scenarios" 
+              desc="Design and compare two states of your system. Switch between them instantly to see the delta." 
               delay={0.05}
             />
             <FeatureCard 
-              icon="💾" 
-              title="Export & import" 
-              desc="Save your complete diagram — layout, positions, and all settings — as a single JSON file." 
+              icon="🔄" 
+              title="Synchronized layout views" 
+              desc="Sync node structures between scenarios. Dragging a node in one scenario mirrors its position in the other." 
               delay={0.1}
+            />
+            <FeatureCard 
+              icon="🎬" 
+              title="Transition GIF animation" 
+              desc="Calculate intermediate steps (25%, 50%, 75%) and export high-fidelity transition GIFs." 
+              delay={0.15}
+            />
+            <FeatureCard 
+              icon="📐" 
+              title="Preserve Input Order" 
+              desc="Order nodes and links strictly by the flow table sequence, generating clean, crossing-free layouts." 
+              delay={0.2}
+            />
+            <FeatureCard 
+              icon="🖱️" 
+              title="Drag & drop custom layout" 
+              desc="Drag any node to place it. Change colors, opacity, or fonts — your custom positions are preserved." 
+              delay={0.25}
             />
             <FeatureCard 
               icon="📋" 
               title="Paste from Excel" 
-              desc="Copy a range of cells directly from Excel or Google Sheets and paste it into the flow table." 
-              delay={0.15}
-            />
-            <FeatureCard 
-              icon="👻" 
-              title="Ghost flows" 
-              desc="Zero-value flows render as faint hairlines, keeping the connection visible even when no flow is passing." 
-              delay={0.2}
-            />
-            <FeatureCard 
-              icon="🔄" 
-              title="Negative flows" 
-              desc="Enter a negative value and the flow direction reverses automatically — useful for return lines." 
-              delay={0.25}
-            />
-            <FeatureCard 
-              icon="🌙" 
-              title="Light & dark theme" 
-              desc="Switch between a clean white canvas and a dark engineering-style background with one click." 
+              desc="Copy a range of cells directly from Excel or Google Sheets and paste them instantly into the flow table." 
               delay={0.3}
             />
             <FeatureCard 
-              icon="🔒" 
-              title="No login, no server" 
-              desc="Runs entirely in your browser. Your data never leaves your machine. No account required, ever." 
+              icon="💾" 
+              title="Save & Load configurations" 
+              desc="Save your complete work — including custom layouts, colors, and flows — to a single local JSON file." 
               delay={0.35}
+            />
+            <FeatureCard 
+              icon="👻" 
+              title="Ghost flow lines" 
+              desc="Zero-value flows render as faint hairlines, keeping the diagram complete even when no flow is active." 
+              delay={0.4}
+            />
+            <FeatureCard 
+              icon="🔁" 
+              title="Negative value support" 
+              desc="Enter a negative value to reverse flow directions automatically — perfect for return loops." 
+              delay={0.45}
+            />
+            <FeatureCard 
+              icon="🌙" 
+              title="Light & dark UI themes" 
+              desc="Switch between a clean white layout and a dark engineering-style canvas with one click." 
+              delay={0.5}
+            />
+            <FeatureCard 
+              icon="🔒" 
+              title="Private & local-first" 
+              desc="Runs entirely in your browser. Your data never leaves your machine. No logins or accounts required." 
+              delay={0.55}
             />
           </div>
         </div>
@@ -443,6 +486,55 @@ export default function Landing() {
         </div>
         <div className="w-full text-xs text-[#5a5754] mt-4">© 2025 SankeyLoop. Built for engineers, by an engineer.</div>
       </footer>
+
+      {showDonationModal && (
+        <div 
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => setShowDonationModal(false)}
+        >
+          <div 
+            className="bg-[#1a1917] border border-[#272521] p-6 rounded-xl shadow-2xl max-w-sm w-full relative text-center"
+            onClick={e => e.stopPropagation()}
+          >
+            <button 
+              className="absolute top-4 right-4 text-[#5a5754] hover:text-[#f0ede8] text-lg leading-none bg-transparent border-0 cursor-pointer"
+              onClick={() => setShowDonationModal(false)}
+            >
+              ×
+            </button>
+            
+            <div className="text-3xl mb-3">☕</div>
+            <h3 className="text-[#f0ede8] text-lg font-semibold tracking-tight mb-2">
+              Thank you for supporting this website!
+            </h3>
+            <p className="text-[#a09d98] text-[12px] leading-relaxed mb-6">
+              Please enter the amount you want to donate in the secure Revolut payment window.
+            </p>
+            
+            <div className="flex flex-col gap-2">
+              <button 
+                className="w-full py-2 rounded-md font-semibold bg-[#ff813f] hover:bg-[#ff6c24] text-white transition-colors border-0 cursor-pointer text-xs shadow-md"
+                onClick={() => {
+                  openDonationPopup();
+                  setShowDonationModal(false);
+                }}
+              >
+                Open Secure Payment Window
+              </button>
+              <button 
+                className="w-full py-2 rounded-md font-medium border border-[#272521] bg-transparent text-[#a09d98] hover:bg-[#272521] hover:text-[#f0ede8] cursor-pointer transition-colors text-xs"
+                onClick={() => setShowDonationModal(false)}
+              >
+                Cancel
+              </button>
+            </div>
+            
+            <p className="text-[#5a5754] text-[10px] mt-4 leading-normal">
+              🔒 Payment processed securely by Revolut. Payment portals cannot be embedded directly inside other websites for anti-phishing protection.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
