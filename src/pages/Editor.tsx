@@ -1,11 +1,11 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { Menu, Save, Upload, Download, RotateCcw, Video, Table as TableIcon, FileText, ChevronRight, Sun, Moon, ArrowUp, ArrowDown, HelpCircle } from 'lucide-react';
+import { Menu, Save, Upload, Download, RotateCcw, Video, Table as TableIcon, FileText, ChevronRight, Sun, Moon, GripVertical, HelpCircle } from 'lucide-react';
 import { Config, Scenario, Flow } from '../types';
 import { DEFAULT_FLOWS } from '../constants';
 import { SankeyDiagram } from '../components/SankeyDiagram';
 import { cn } from '../lib/utils';
 import { GuidedSetup } from '../components/GuidedSetup';
-import { buildSankeyData, computeAlignedX, resolveNodeColor, interpolateRgb, getExportDimensions, computeSankeyMetrics, computePreservedPositions } from '../lib/sankeyUtils';
+import { buildSankeyData, computeAlignedX, resolveNodeColor, interpolateRgb, getExportDimensions, computeSankeyMetrics, computePreservedPositions, interpolateFlowColor, getNodeLabel } from '../lib/sankeyUtils';
 import Plotly from 'plotly.js-dist-min';
 import * as gifenc from 'gifenc';
 
@@ -38,6 +38,7 @@ const INITIAL_CONFIG: Config = {
   aspectRatio: 'fit',
   theme: 'dark',
   bgColor: '#ffffff',
+  nodeHPs: {},
 };
 
 const INITIAL_SCENARIOS = {
@@ -78,7 +79,7 @@ const INITIAL_SCENARIOS = {
       "Cooling Tower": { x: 0.8757933032377662, y: 0.39877527281381264 }
     },
     hasDraggedNodes: true,
-    nodeSpacing: 50
+    nodeSpacing: 50,
   },
   after: {
     flows: [
@@ -119,13 +120,15 @@ const INITIAL_SCENARIOS = {
       "HP": { x: 0.8669960792506688, y: 0.32544193948047934 }
     },
     hasDraggedNodes: true,
-    nodeSpacing: 50
+    nodeSpacing: 50,
   }
 };
 
 export default function Editor() {
   const [config, setConfig] = useState<Config>(INITIAL_CONFIG);
   const [scenarios, setScenarios] = useState<Record<string, Scenario>>(INITIAL_SCENARIOS);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragAllowedIndex, setDragAllowedIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('sankeyloop_load_example');
@@ -138,6 +141,9 @@ export default function Editor() {
             before: { ...INITIAL_SCENARIOS.before, flows: data.flows },
             after: { ...INITIAL_SCENARIOS.after, flows: data.flows },
           });
+        }
+        if (data.nodeHPs || (data.config && data.config.nodeHPs)) {
+          updateConfig({ nodeHPs: data.nodeHPs || data.config.nodeHPs });
         }
         if (data.preserveInputOrder !== undefined) {
           setPreserveInputOrder(data.preserveInputOrder);
@@ -220,7 +226,7 @@ export default function Editor() {
               const vB = parseFloat(String(fB.Value).replace(',', '.')) || 0;
               const vA = fA ? (parseFloat(String(fA.Value).replace(',', '.')) || 0) : 0;
               const v = vB + (vA - vB) * t;
-              return { ...fB, Value: v.toFixed(2), Color: t < 0.5 ? fB.Color : (fA?.Color || fB.Color) };
+              return { ...fB, Value: v.toFixed(2), Color: interpolateFlowColor(fB.Color, fA?.Color, t, config) };
             });
 
             // Interpolate node spacing
@@ -248,7 +254,7 @@ export default function Editor() {
               nodeColorOverrides: { ...curr.before.nodeColorOverrides },
               nodePositions: newPositions,
               hasDraggedNodes: curr.before.hasDraggedNodes || curr.after.hasDraggedNodes,
-              nodeSpacing: n
+              nodeSpacing: n,
             };
           });
           return nextScenarios;
@@ -258,20 +264,22 @@ export default function Editor() {
     });
   };
 
-  const handleNodeDrag = (positions: Record<string, { x: number; y: number }>) => {
+  const handleNodeDrag = (scenarioKey: string, positions: Record<string, { x: number; y: number }>) => {
     if (isViewsSynced) {
       setScenarios(prev => ({
         ...prev,
-        before: { ...prev.before, nodePositions: positions, hasDraggedNodes: true },
-        after: { ...prev.after, nodePositions: positions, hasDraggedNodes: true },
+        before: { ...prev.before, nodePositions: { ...positions }, hasDraggedNodes: true },
+        after: { ...prev.after, nodePositions: { ...positions }, hasDraggedNodes: true },
       }));
     } else {
-      updateScenario(viewScenario, {
+      updateScenario(scenarioKey, {
         nodePositions: positions,
         hasDraggedNodes: true,
       });
     }
   };
+
+
 
   const toggleSyncViews = () => {
     setIsViewsSynced(prev => {
@@ -311,13 +319,13 @@ export default function Editor() {
               ...curr.before, 
               flows: bFlows,
               nodePositions: { ...currentScenario.nodePositions },
-              hasDraggedNodes: currentScenario.hasDraggedNodes
+              hasDraggedNodes: currentScenario.hasDraggedNodes,
             },
             after: { 
               ...curr.after, 
               flows: aFlows,
               nodePositions: { ...currentScenario.nodePositions },
-              hasDraggedNodes: currentScenario.hasDraggedNodes
+              hasDraggedNodes: currentScenario.hasDraggedNodes,
             }
           };
         });
@@ -377,14 +385,28 @@ export default function Editor() {
     reader.onload = (event) => {
       try {
         const data = JSON.parse(event.target?.result as string);
-        if (data.config) setConfig({ ...INITIAL_CONFIG, ...data.config });
-        if (data.scenarios) setScenarios(data.scenarios);
-        else if (data.flows) {
+        let importedConfig = data.config ? { ...INITIAL_CONFIG, ...data.config } : { ...config };
+        let extractedNodeHPs = data.nodeHPs || importedConfig.nodeHPs || {};
+
+        if (data.scenarios) {
+          const sanitizedScenarios: Record<string, Scenario> = {};
+          Object.keys(data.scenarios).forEach(k => {
+            const sc = data.scenarios[k];
+            if (sc.nodeHPs) {
+              extractedNodeHPs = { ...extractedNodeHPs, ...sc.nodeHPs };
+            }
+            const { nodeHPs, ...rest } = sc;
+            sanitizedScenarios[k] = rest;
+          });
+          setScenarios(sanitizedScenarios);
+        } else if (data.flows) {
            setScenarios({
             before: { ...INITIAL_SCENARIOS.before, flows: data.flows },
             after: { ...INITIAL_SCENARIOS.after, flows: data.flows },
           });
         }
+        importedConfig.nodeHPs = extractedNodeHPs;
+        setConfig(importedConfig);
         if (data.preserveInputOrder !== undefined) {
           setPreserveInputOrder(data.preserveInputOrder);
         }
@@ -508,7 +530,7 @@ export default function Editor() {
           return {
             ...fB,
             Value: v.toFixed(4),
-            Color: localT < 0.5 ? fB.Color : (fA?.Color || fB.Color)
+            Color: interpolateFlowColor(fB.Color, fA?.Color, localT, config)
           };
         });
 
@@ -535,7 +557,7 @@ export default function Editor() {
 
         const displayLabels = labels.map((l, idx) => {
           const total = Math.round(Math.max(nodeIn[idx], nodeOut[idx]));
-          return l ? `${l}<br>${total.toLocaleString('en').replace(/,/g, '\u2009')} ${config.valueUnit}` : '';
+          return getNodeLabel(l, total, interpolatedFlows, config.nodeHPs, config.valueUnit);
         });
 
         const resolvedDefault = resolveNodeColor(config.defaultNodeColor, '#808080');
@@ -724,22 +746,31 @@ export default function Editor() {
     updateScenario(editScenario, { flows: newFlows });
   };
 
-  const moveFlowUp = (index: number) => {
-    if (index === 0) return;
-    const newFlows = [...editScenarioData.flows];
-    const temp = newFlows[index];
-    newFlows[index] = newFlows[index - 1];
-    newFlows[index - 1] = temp;
-    updateScenario(editScenario, { flows: newFlows });
+  const handleDragStart = (index: number, e: React.DragEvent) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
   };
 
-  const moveFlowDown = (index: number) => {
-    if (index >= editScenarioData.flows.length - 2) return; // Don't swap with or past the empty trailing row
+  const handleDragOver = (index: number, e: React.DragEvent) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+
+    const lastIndex = editScenarioData.flows.length - 1;
+    if (index === lastIndex || draggedIndex === lastIndex) return;
+
     const newFlows = [...editScenarioData.flows];
-    const temp = newFlows[index];
-    newFlows[index] = newFlows[index + 1];
-    newFlows[index + 1] = temp;
+    const draggedRow = newFlows[draggedIndex];
+    newFlows.splice(draggedIndex, 1);
+    newFlows.splice(index, 0, draggedRow);
+
     updateScenario(editScenario, { flows: newFlows });
+    setDraggedIndex(index);
+    setDragAllowedIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragAllowedIndex(null);
   };
 
   const clearAllFlows = () => {
@@ -1053,6 +1084,7 @@ export default function Editor() {
                     <thead>
                       <tr className="bg-[var(--surface2)] sticky top-0">
                         <th className="p-1.5 text-left font-medium text-[var(--text2)]">Node</th>
+                        <th className="p-1.5 text-center font-medium text-[var(--text2)]">HP?</th>
                         <th className="p-1.5 text-left font-medium text-[var(--text2)]">Color</th>
                       </tr>
                     </thead>
@@ -1060,6 +1092,18 @@ export default function Editor() {
                       {labels.map(l => (
                         <tr key={l} className="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--bg)]">
                           <td className="p-1.5 truncate max-w-[100px]" title={l}>{l}</td>
+                          <td className="p-1.5 text-center">
+                            <input 
+                              type="checkbox" 
+                              checked={config.nodeHPs?.[l] || false}
+                              onChange={e => {
+                                updateConfig({
+                                  nodeHPs: { ...config.nodeHPs, [l]: e.target.checked }
+                                });
+                              }}
+                              className="w-3.5 h-3.5 accent-[var(--accent)] cursor-pointer"
+                            />
+                          </td>
                           <td className="p-1.5">
                             <div className="flex gap-1.5 items-center">
                               <input 
@@ -1342,7 +1386,17 @@ export default function Editor() {
                         </thead>
                         <tbody>
                           {editScenarioData.flows.map((flow, i) => (
-                            <tr key={i} className="hover:bg-[var(--surface2)] border-b border-[var(--border)] last:border-b-0">
+                            <tr 
+                              key={i} 
+                              draggable={dragAllowedIndex === i}
+                              onDragStart={(e) => handleDragStart(i, e)}
+                              onDragOver={(e) => handleDragOver(i, e)}
+                              onDragEnd={handleDragEnd}
+                              className={cn(
+                                "hover:bg-[var(--surface2)] border-b border-[var(--border)] last:border-b-0 transition-colors duration-150",
+                                draggedIndex === i && "opacity-40 bg-[var(--surface2)] border-dashed border-[var(--accent)]"
+                              )}
+                            >
                               <td className="p-0"><input type="text" value={flow.Source} onPaste={e => handleTablePaste(e, i, 'Source')} onChange={e => handleFlowChange(i, 'Source', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
                               <td className="p-0"><input type="text" value={flow.Target} onPaste={e => handleTablePaste(e, i, 'Target')} onChange={e => handleFlowChange(i, 'Target', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
                               <td className="p-0"><input type="text" value={flow.Value} onPaste={e => handleTablePaste(e, i, 'Value')} onChange={e => handleFlowChange(i, 'Value', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
@@ -1351,20 +1405,25 @@ export default function Editor() {
                                 {(i !== editScenarioData.flows.length - 1 || flow.Source) && (
                                   <>
                                     <button 
-                                      onClick={() => moveFlowUp(i)} 
-                                      disabled={i === 0}
-                                      className={cn("p-0.5 rounded", i === 0 ? "opacity-30 cursor-not-allowed" : "text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--surface3)]")}
+                                      type="button"
+                                      onMouseEnter={() => setDragAllowedIndex(i)}
+                                      onMouseLeave={() => {
+                                        if (draggedIndex === null) {
+                                          setDragAllowedIndex(null);
+                                        }
+                                      }}
+                                      className="p-1 rounded cursor-grab active:cursor-grabbing text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--surface3)] transition-colors flex items-center justify-center"
+                                      title="Drag to reorder"
                                     >
-                                      <ArrowUp size={14} />
+                                      <GripVertical size={14} />
                                     </button>
                                     <button 
-                                      onClick={() => moveFlowDown(i)} 
-                                      disabled={i >= editScenarioData.flows.length - 2}
-                                      className={cn("p-0.5 rounded", i >= editScenarioData.flows.length - 2 ? "opacity-30 cursor-not-allowed" : "text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--surface3)]")}
+                                      onClick={() => deleteFlow(i)} 
+                                      className="text-[var(--text3)] hover:text-[var(--danger)] text-lg px-1 text-center leading-none"
+                                      title="Delete flow"
                                     >
-                                      <ArrowDown size={14} />
+                                      ×
                                     </button>
-                                    <button onClick={() => deleteFlow(i)} className="text-[var(--text3)] hover:text-[var(--danger)] text-lg px-1 text-center leading-none">×</button>
                                   </>
                                 )}
                               </td>
@@ -1584,7 +1643,7 @@ export default function Editor() {
                       preserveInputOrder={preserveInputOrder}
                       onNodeDrag={(positions) => {
                         setPreserveInputOrder(false);
-                        handleNodeDrag(positions);
+                        handleNodeDrag(scenarioKey, positions);
                       }}
                       animating={animating && viewScenario === scenarioKey}
                       animSpeed={animSpeed}
