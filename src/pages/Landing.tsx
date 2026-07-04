@@ -107,8 +107,8 @@ export default function Landing() {
     const left = (window.screen.width - width) / 2;
     const top = (window.screen.height - height) / 2;
     window.open(
-      'https://revolut.me/tsanzdesantamaria',
-      'RevolutDonation',
+      'https://buymeacoffee.com/tsanz',
+      'BuyMeACoffeeDonation',
       `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`
     );
   };
@@ -508,7 +508,7 @@ export default function Landing() {
               Thank you for supporting this website!
             </h3>
             <p className="text-[#a09d98] text-[12px] leading-relaxed mb-6">
-              Please enter the amount you want to donate in the secure Revolut payment window.
+              Please enter the amount you want to donate on the Buy Me a Coffee page.
             </p>
             
             <div className="flex flex-col gap-2">
@@ -519,7 +519,7 @@ export default function Landing() {
                   setShowDonationModal(false);
                 }}
               >
-                Open Secure Payment Window
+                Open Buy Me a Coffee Page
               </button>
               <button 
                 className="w-full py-2 rounded-md font-medium border border-[#272521] bg-transparent text-[#a09d98] hover:bg-[#272521] hover:text-[#f0ede8] cursor-pointer transition-colors text-xs"
@@ -530,7 +530,7 @@ export default function Landing() {
             </div>
             
             <p className="text-[#5a5754] text-[10px] mt-4 leading-normal">
-              🔒 Payment processed securely by Revolut. Payment portals cannot be embedded directly inside other websites for anti-phishing protection.
+              🔒 Payment processed securely by Buy Me a Coffee. Payment portals cannot be embedded directly inside other websites for anti-phishing protection.
             </p>
           </div>
         </div>

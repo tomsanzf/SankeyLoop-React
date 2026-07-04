@@ -450,8 +450,8 @@ export default function Editor() {
     const left = (window.screen.width - width) / 2;
     const top = (window.screen.height - height) / 2;
     window.open(
-      'https://revolut.me/tsanzdesantamaria',
-      'RevolutDonation',
+      'https://buymeacoffee.com/tsanz',
+      'BuyMeACoffeeDonation',
       `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`
     );
   };
@@ -1904,7 +1904,7 @@ export default function Editor() {
                 Thank you for supporting this website!
               </h3>
               <p className="text-[var(--text2)] text-[12px] leading-relaxed mb-6">
-                Please enter the amount you want to donate in the secure Revolut payment window.
+                Please enter the amount you want to donate on the Buy Me a Coffee page.
               </p>
               
               <div className="flex flex-col gap-2">
@@ -1915,7 +1915,7 @@ export default function Editor() {
                     setShowDonationModal(false);
                   }}
                 >
-                  Open Secure Payment Window
+                  Open Buy Me a Coffee Page
                 </button>
                 <button 
                   className="w-full py-2 rounded-[var(--radius)] font-medium border border-[var(--border)] bg-transparent text-[var(--text2)] hover:bg-[var(--surface2)] hover:text-[var(--text)] cursor-pointer transition-colors text-xs"
@@ -1926,7 +1926,7 @@ export default function Editor() {
               </div>
               
               <p className="text-[var(--text3)] text-[10px] mt-4 leading-normal">
-                🔒 Payment processed securely by Revolut. Payment portals cannot be embedded directly inside other websites for anti-phishing protection.
+                🔒 Payment processed securely by Buy Me a Coffee. Payment portals cannot be embedded directly inside other websites for anti-phishing protection.
               </p>
             </div>
           </div>
