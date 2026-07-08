@@ -3,8 +3,12 @@ import { motion, useAnimation, useInView } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Linkedin, Mail } from 'lucide-react';
 import { cn } from '../lib/utils';
+import Header from '../components/Header';
+import Footer from '../components/Footer';
+import EditorialSection from '../components/EditorialSection';
+import FAQSection from '../components/FAQSection';
 
-const Reveal: React.FC<{ children: React.ReactNode; delay?: number; className?: string }> = ({ children, delay = 0, className }) => {
+const Reveal: React.FC<{ children: React.ReactNode; delay?: number; className?: string; onClick?: () => void }> = ({ children, delay = 0, className, onClick }) => {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, amount: 0.2 });
   const controls = useAnimation();
@@ -18,6 +22,7 @@ const Reveal: React.FC<{ children: React.ReactNode; delay?: number; className?: 
   return (
     <motion.div
       ref={ref}
+      onClick={onClick}
       variants={{
         hidden: { opacity: 0, y: 28 },
         visible: { opacity: 1, y: 0 },
@@ -116,29 +121,8 @@ export default function Landing() {
   return (
     <div className="bg-[#0c0c0b] text-[#f0ede8] font-sans selection:bg-[#e8541a] selection:text-white">
       {/* NAV */}
-      <nav className="fixed top-0 left-0 right-0 z-[100] flex items-center gap-8 h-[60px] px-6 md:px-12 bg-[#0c0c0b]/85 backdrop-blur-xl border-b border-[#272521]">
-        <a href="/" className="text-[17px] font-semibold tracking-tight text-[#f0ede8] no-underline">
-          Sankey<span className="text-[#e8541a]">Loop</span>
-        </a>
-        <div className="hidden md:flex flex-1 gap-7">
-          <a href="#what" className="text-[13px] font-medium text-[#a09d98] no-underline hover:text-[#f0ede8] transition-colors">What is it?</a>
-          <a href="#examples" className="text-[13px] font-medium text-[#a09d98] no-underline hover:text-[#f0ede8] transition-colors">Examples</a>
-          <a href="#features" className="text-[13px] font-medium text-[#a09d98] no-underline hover:text-[#f0ede8] transition-colors">Features</a>
-          <a href="mailto:tomsanzf@gmail.com" className="text-[13px] font-medium text-[#a09d98] no-underline hover:text-[#f0ede8] transition-colors">Contact</a>
-        </div>
-        <button 
-          onClick={() => setShowDonationModal(true)}
-          className="ml-auto bg-transparent border border-[#ff813f] text-[#ff813f] hover:bg-[#ff813f] hover:text-white px-[14px] py-[6px] rounded-md text-[12px] font-semibold transition-all whitespace-nowrap cursor-pointer"
-        >
-          ☕ Buy me a coffee
-        </button>
-        <button 
-          onClick={() => navigate('/app')}
-          className="bg-[#e8541a] text-white px-[18px] py-[7px] rounded-md text-[13px] font-semibold hover:opacity-90 transition-opacity whitespace-nowrap cursor-pointer"
-        >
-          Open App →
-        </button>
-      </nav>
+      <Header />
+
 
       {/* HERO */}
       <div className="relative min-h-screen grid lg:grid-cols-2 items-center gap-12 px-6 md:px-12 pt-[100px] pb-20 overflow-hidden">
@@ -459,6 +443,10 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* EDITORIAL AND FAQ SECTIONS */}
+      <EditorialSection />
+      <FAQSection />
+
       {/* CTA BAND */}
       <div className="bg-[#131311] border-y border-[#272521] text-center py-24 px-6 md:px-12">
         <Reveal>
@@ -475,17 +463,8 @@ export default function Landing() {
       </div>
 
       {/* FOOTER */}
-      <footer className="max-w-[1200px] mx-auto py-12 px-6 md:px-12 flex flex-wrap items-center justify-between gap-4 border-t border-[#272521]">
-        <div className="text-sm font-semibold text-[#a09d98]">Sankey<span className="text-[#e8541a]">Loop</span></div>
-        <div className="flex flex-wrap gap-6">
-          <button onClick={() => navigate('/app')} className="text-[13px] text-[#5a5754] hover:text-[#a09d98] transition-colors">App</button>
-          <a href="#examples" className="text-[13px] text-[#5a5754] hover:text-[#a09d98] transition-colors">Examples</a>
-          <a href="#what" className="text-[13px] text-[#5a5754] hover:text-[#a09d98] transition-colors">About</a>
-          <a href="https://www.linkedin.com/in/tomas-sanz-de-santamaria-a34a0451/" target="_blank" rel="noopener" className="text-[13px] text-[#5a5754] hover:text-[#a09d98] transition-colors">LinkedIn</a>
-          <a href="mailto:contact@sankeyloop.com" className="text-[13px] text-[#5a5754] hover:text-[#a09d98] transition-colors">contact@sankeyloop.com</a>
-        </div>
-        <div className="w-full text-xs text-[#5a5754] mt-4">© 2025 SankeyLoop. Built for engineers, by an engineer.</div>
-      </footer>
+      <Footer />
+
 
       {showDonationModal && (
         <div 

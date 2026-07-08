@@ -5,6 +5,8 @@ import { DEFAULT_FLOWS } from '../constants';
 import { SankeyDiagram } from '../components/SankeyDiagram';
 import { cn } from '../lib/utils';
 import { GuidedSetup } from '../components/GuidedSetup';
+import EditorDocumentation from '../components/EditorDocumentation';
+import Footer from '../components/Footer';
 import { buildSankeyData, computeAlignedX, resolveNodeColor, interpolateRgb, getExportDimensions, computeSankeyMetrics, computePreservedPositions, interpolateFlowColor, getNodeLabel } from '../lib/sankeyUtils';
 import Plotly from 'plotly.js-dist-min';
 import * as gifenc from 'gifenc';
@@ -1286,8 +1288,9 @@ export default function Editor() {
       </aside>
 
       {/* Main Content */}
-      <main className="relative flex flex-col flex-1 min-w-0 overflow-hidden">
-        {!sidebarOpen && (
+      <main className="relative flex flex-col flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
+        <div className="flex flex-col h-screen shrink-0 relative">
+          {!sidebarOpen && (
           <button 
             onClick={() => setSidebarOpen(true)}
             className="fixed top-0 left-0 flex flex-col items-center justify-center w-11 h-11 border border-l-0 border-[var(--border)] bg-[var(--surface)] z-20 rounded-br-[var(--radius)] text-[var(--text3)] shadow-md transition-colors hover:text-[var(--text)] hover:bg-[var(--surface2)]"
@@ -1695,7 +1698,11 @@ export default function Editor() {
              ☕ Buy me a coffee
            </button>
          </div>
- 
+        </div>
+
+        <EditorDocumentation />
+        <Footer />
+  
          {exportingVideo && (
            <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm">
              <div className="text-white font-medium mb-4">Generating Video...</div>
