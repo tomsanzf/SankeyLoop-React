@@ -27,8 +27,7 @@ const INITIAL_CONFIG: Config = {
   nodeSpacing: 50,
   nodeThickness: 10,
   linkOpacity: 0.7,
-  ghostOpacity: 0.0,
-  ghostThreshold: 0.001,
+  ghostOpacity: 0.12,
   arrowSize: 15,
   labelSize: 13,
   labelColor: '#1e293b',
@@ -42,71 +41,6 @@ const INITIAL_CONFIG: Config = {
   theme: 'dark',
   bgColor: '#ffffff',
   nodeHPs: {},
-};
-
-const matchFlows = (startFlows: Flow[], endFlows: Flow[]) => {
-  const startMatched = new Set<number>();
-  const endMatched = new Set<number>();
-  
-  const startToEndMap = new Map<number, Flow>();
-  const unmatchedEnd: Flow[] = [];
-  
-  // Pass 1: Match by exact Source, Target, and Color
-  startFlows.forEach((sf, sIdx) => {
-    const sSource = String(sf.Source).trim();
-    const sTarget = String(sf.Target).trim();
-    const sColor = String(sf.Color).trim();
-    
-    if (!sSource && !sTarget) return; // skip empty rows
-    
-    const matchIdx = endFlows.findIndex((ef, eIdx) => {
-      return !endMatched.has(eIdx) &&
-             String(ef.Source).trim() === sSource &&
-             String(ef.Target).trim() === sTarget &&
-             String(ef.Color).trim() === sColor;
-    });
-    
-    if (matchIdx !== -1) {
-      startMatched.add(sIdx);
-      endMatched.add(matchIdx);
-      startToEndMap.set(sIdx, endFlows[matchIdx]);
-    }
-  });
-  
-  // Pass 2: Match by Source and Target (ignoring Color)
-  startFlows.forEach((sf, sIdx) => {
-    if (startMatched.has(sIdx)) return;
-    
-    const sSource = String(sf.Source).trim();
-    const sTarget = String(sf.Target).trim();
-    
-    if (!sSource && !sTarget) return; // skip empty rows
-    
-    const matchIdx = endFlows.findIndex((ef, eIdx) => {
-      return !endMatched.has(eIdx) &&
-             String(ef.Source).trim() === sSource &&
-             String(ef.Target).trim() === sTarget;
-    });
-    
-    if (matchIdx !== -1) {
-      startMatched.add(sIdx);
-      endMatched.add(matchIdx);
-      startToEndMap.set(sIdx, endFlows[matchIdx]);
-    }
-  });
-  
-  // Identify unmatched endFlows
-  endFlows.forEach((ef, eIdx) => {
-    const eSource = String(ef.Source).trim();
-    const eTarget = String(ef.Target).trim();
-    if (!eSource && !eTarget) return; // skip empty rows
-    
-    if (!endMatched.has(eIdx)) {
-      unmatchedEnd.push(ef);
-    }
-  });
-  
-  return { startToEndMap, unmatchedEnd };
 };
 
 const INITIAL_SCENARIOS = {
@@ -235,17 +169,6 @@ export default function Editor() {
   const [localFlowText, setLocalFlowText] = useState<string | null>(null);
   const [copiedFeedback, setCopiedFeedback] = useState(false);
 
-  // Grid Selection States
-  interface CellPos {
-    rowIndex: number;
-    colIndex: number;
-  }
-  const [selectionStart, setSelectionStart] = useState<CellPos | null>(null);
-  const [selectionEnd, setSelectionEnd] = useState<CellPos | null>(null);
-  const [editingCell, setEditingCell] = useState<CellPos | null>(null);
-  const [isSelecting, setIsSelecting] = useState(false);
-
-
   useEffect(() => {
     setLocalFlowText(null);
   }, [editScenario, inputMode]);
@@ -276,14 +199,6 @@ export default function Editor() {
   const updateConfig = (updates: Partial<Config>) => setConfig(prev => ({ ...prev, ...updates }));
 
   const updateScenario = (key: string, updates: Partial<Scenario>) => {
-    if (updates.flows) {
-      const nextFlows = [...updates.flows];
-      const lastFlow = nextFlows[nextFlows.length - 1];
-      if (lastFlow && (lastFlow.Source.trim() !== '' || lastFlow.Target.trim() !== '' || lastFlow.Value.trim() !== '' || lastFlow.Color.trim() !== '')) {
-        nextFlows.push({ Source: '', Target: '', Value: '', Color: '' });
-      }
-      updates.flows = nextFlows;
-    }
     setScenarios(prev => ({
       ...prev,
       [key]: { ...prev[key], ...updates },
@@ -291,69 +206,65 @@ export default function Editor() {
   };
 
   const toggleVideoEditor = () => {
-    const next = !videoEditorEnabled;
-    setVideoEditorEnabled(next);
-    
-    if (!next && ['25%', '50%', '75%'].includes(viewScenario)) {
-      setViewScenario('before');
-    }
-    
-    if (next) {
-      setScenarios(curr => {
-        const intermediateKeys = ['25%', '50%', '75%'];
-        const nextScenarios = { ...curr };
-        
-        intermediateKeys.forEach(key => {
-          const t = parseInt(key) / 100;
-          const bFlows = curr.before.flows;
-          const aFlows = curr.after.flows;
-          const { startToEndMap, unmatchedEnd } = matchFlows(bFlows, aFlows);
+    setVideoEditorEnabled(prev => {
+      const next = !prev;
+      if (!next && ['25%', '50%', '75%'].includes(viewScenario)) {
+        setViewScenario('before');
+      }
+      if (next) {
+        setScenarios(curr => {
+          const intermediateKeys = ['25%', '50%', '75%'];
+          const nextScenarios = { ...curr };
           
-          const newFlows = bFlows.map((fB, sIdx) => {
-            const fA = startToEndMap.get(sIdx);
-            const vB = parseFloat(String(fB.Value).replace(',', '.')) || 0;
-            const vA = fA ? (parseFloat(String(fA.Value).replace(',', '.')) || 0) : 0;
-            const v = vB + (vA - vB) * t;
-            return { ...fB, Value: v.toFixed(2), Color: interpolateFlowColor(fB.Color, fA?.Color, t, config) };
-          });
-
-          unmatchedEnd.forEach(fA => {
-            const vA = parseFloat(String(fA.Value).replace(',', '.')) || 0;
-            const v = vA * t;
-            newFlows.push({ ...fA, Value: v.toFixed(2) });
-          });
-
-          // Interpolate node spacing
-          const nB = curr.before.nodeSpacing ?? config.nodeSpacing;
-          const nA = curr.after.nodeSpacing ?? config.nodeSpacing;
-          const n = nB + (nA - nB) * t;
-
-          // Interpolate positions if available
-          let newPositions = { ...curr.before.nodePositions };
-          if (curr.after.hasDraggedNodes && curr.before.hasDraggedNodes) {
-            Object.keys(curr.before.nodePositions).forEach(nodeName => {
-              const pB = curr.before.nodePositions[nodeName];
-              const pA = curr.after.nodePositions[nodeName];
-              if (pB && pA) {
-                newPositions[nodeName] = {
-                  x: pB.x + (pA.x - pB.x) * t,
-                  y: pB.y + (pA.y - pB.y) * t
-                };
-              }
+          intermediateKeys.forEach(key => {
+            const t = parseInt(key) / 100;
+            const bFlows = curr.before.flows;
+            const aFlows = curr.after.flows;
+            
+            const getFlowKey = (f: Flow) => `${String(f.Source).trim()}||${String(f.Target).trim()}`;
+            const aMap = new Map(aFlows.map(f => [getFlowKey(f), f]));
+            
+            const newFlows = bFlows.map(fB => {
+              const fA = aMap.get(getFlowKey(fB)) as Flow | undefined;
+              const vB = parseFloat(String(fB.Value).replace(',', '.')) || 0;
+              const vA = fA ? (parseFloat(String(fA.Value).replace(',', '.')) || 0) : 0;
+              const v = vB + (vA - vB) * t;
+              return { ...fB, Value: v.toFixed(2), Color: interpolateFlowColor(fB.Color, fA?.Color, t, config) };
             });
-          }
 
-          nextScenarios[key] = {
-            flows: newFlows,
-            nodeColorOverrides: { ...curr.before.nodeColorOverrides },
-            nodePositions: newPositions,
-            hasDraggedNodes: curr.before.hasDraggedNodes || curr.after.hasDraggedNodes,
-            nodeSpacing: n,
-          };
+            // Interpolate node spacing
+            const nB = curr.before.nodeSpacing ?? config.nodeSpacing;
+            const nA = curr.after.nodeSpacing ?? config.nodeSpacing;
+            const n = nB + (nA - nB) * t;
+
+            // Interpolate positions if available
+            let newPositions = { ...curr.before.nodePositions };
+            if (curr.after.hasDraggedNodes && curr.before.hasDraggedNodes) {
+              Object.keys(curr.before.nodePositions).forEach(nodeName => {
+                const pB = curr.before.nodePositions[nodeName];
+                const pA = curr.after.nodePositions[nodeName];
+                if (pB && pA) {
+                  newPositions[nodeName] = {
+                    x: pB.x + (pA.x - pB.x) * t,
+                    y: pB.y + (pA.y - pB.y) * t
+                  };
+                }
+              });
+            }
+
+            nextScenarios[key] = {
+              flows: newFlows,
+              nodeColorOverrides: { ...curr.before.nodeColorOverrides },
+              nodePositions: newPositions,
+              hasDraggedNodes: curr.before.hasDraggedNodes || curr.after.hasDraggedNodes,
+              nodeSpacing: n,
+            };
+          });
+          return nextScenarios;
         });
-        return nextScenarios;
-      });
-    }
+      }
+      return next;
+    });
   };
 
   const handleNodeDrag = (scenarioKey: string, positions: Record<string, { x: number; y: number }>) => {
@@ -374,60 +285,56 @@ export default function Editor() {
 
 
   const toggleSyncViews = () => {
-    const next = !isViewsSynced;
-    setIsViewsSynced(next);
-    
-    if (!next) {
-      setVideoEditorEnabled(false);
-      setViewScenario(curr => ['25%', '50%', '75%'].includes(curr) ? 'before' : curr);
-    } else {
-      setScenarios(curr => {
-        const bFlows = [...curr.before.flows];
-        const aFlows = [...curr.after.flows];
+    setIsViewsSynced(prev => {
+      const next = !prev;
+      if (!next) {
+        setTimeout(() => {
+          setVideoEditorEnabled(false);
+          setViewScenario(curr => ['25%', '50%', '75%'].includes(curr) ? 'before' : curr);
+        }, 0);
+      }
+      if (next) {
+        setScenarios(curr => {
+          const bFlows = [...curr.before.flows];
+          const aFlows = [...curr.after.flows];
 
-        const originalB = [...curr.before.flows];
-        const originalA = [...curr.after.flows];
+          const getFlowKey = (f: Flow) => `${String(f.Source).trim()}||${String(f.Target).trim()}`;
+          
+          const bMap = new Map(bFlows.map(f => [getFlowKey(f), f]));
+          const aMap = new Map(aFlows.map(f => [getFlowKey(f), f]));
 
-        const { startToEndMap, unmatchedEnd } = matchFlows(originalB, originalA);
+          bFlows.forEach(bf => {
+            if (!aMap.has(getFlowKey(bf))) {
+              aFlows.push({ ...bf, Value: '1e-9' });
+            }
+          });
 
-        originalB.forEach((bf, sIdx) => {
-          if (!startToEndMap.has(sIdx)) {
-            aFlows.push({ ...bf, Value: '1e-9' });
-          }
+          aFlows.forEach(af => {
+            if (!bMap.has(getFlowKey(af))) {
+              bFlows.push({ ...af, Value: '1e-9' });
+            }
+          });
+
+          const currentScenario = viewScenario === 'before' ? curr.before : curr.after;
+
+          return {
+            before: { 
+              ...curr.before, 
+              flows: bFlows,
+              nodePositions: { ...currentScenario.nodePositions },
+              hasDraggedNodes: currentScenario.hasDraggedNodes,
+            },
+            after: { 
+              ...curr.after, 
+              flows: aFlows,
+              nodePositions: { ...currentScenario.nodePositions },
+              hasDraggedNodes: currentScenario.hasDraggedNodes,
+            }
+          };
         });
-
-        unmatchedEnd.forEach(af => {
-          bFlows.push({ ...af, Value: '1e-9' });
-        });
-
-        const currentScenario = viewScenario === 'before' ? curr.before : curr.after;
-        const otherScenario = viewScenario === 'before' ? curr.after : curr.before;
-
-        const syncedPositions = { ...currentScenario.nodePositions };
-        Object.keys(otherScenario.nodePositions).forEach(nodeName => {
-          if (syncedPositions[nodeName] === undefined) {
-            syncedPositions[nodeName] = otherScenario.nodePositions[nodeName];
-          }
-        });
-
-        const hasDragged = currentScenario.hasDraggedNodes || otherScenario.hasDraggedNodes;
-
-        return {
-          before: { 
-            ...curr.before, 
-            flows: bFlows,
-            nodePositions: syncedPositions,
-            hasDraggedNodes: hasDragged,
-          },
-          after: { 
-            ...curr.after, 
-            flows: aFlows,
-            nodePositions: syncedPositions,
-            hasDraggedNodes: hasDragged,
-          }
-        };
-      });
-    }
+      }
+      return next;
+    });
   };
 
   const handleDataSectionResizeStart = useCallback((e: React.MouseEvent) => {
@@ -615,10 +522,11 @@ export default function Editor() {
         const sStart = anchors[segmentIdx];
         const sEnd = anchors[segmentIdx + 1];
         
-        const { startToEndMap, unmatchedEnd } = matchFlows(sStart.flows, sEnd.flows);
-
-        const interpolatedFlows = sStart.flows.map((fB, sIdx) => {
-          const fA = startToEndMap.get(sIdx);
+        const getFlowKey = (f: Flow) => `${String(f.Source).trim()}||${String(f.Target).trim()}`;
+        const endMap = new Map(sEnd.flows.map(f => [getFlowKey(f), f]));
+        
+        const interpolatedFlows = sStart.flows.map(fB => {
+          const fA = endMap.get(getFlowKey(fB)) as Flow | undefined;
           const vB = parseFloat(String(fB.Value).replace(',', '.')) || 0;
           const vA = fA ? (parseFloat(String(fA.Value).replace(',', '.')) || 0) : 0;
           const v = vB + (vA - vB) * localT;
@@ -629,9 +537,12 @@ export default function Editor() {
           };
         });
 
-        unmatchedEnd.forEach(fA => {
-          const vA = parseFloat(String(fA.Value).replace(',', '.')) || 0;
-          interpolatedFlows.push({ ...fA, Value: (vA * localT).toFixed(4) });
+        const startMap = new Map(sStart.flows.map(f => [getFlowKey(f), f]));
+        sEnd.flows.forEach(fA => {
+          if (!startMap.has(getFlowKey(fA))) {
+             const vA = parseFloat(String(fA.Value).replace(',', '.')) || 0;
+             interpolatedFlows.push({ ...fA, Value: (vA * localT).toFixed(4) });
+          }
         });
 
         const currentSpacing_start = sStart.nodeSpacing ?? config.nodeSpacing;
@@ -979,221 +890,6 @@ export default function Editor() {
     });
   };
 
-  const COL_KEYS = ['Source', 'Target', 'Value', 'Color'] as const;
-
-  const isCellSelected = useCallback((r: number, c: number) => {
-    if (!selectionStart || !selectionEnd) return false;
-    const minRow = Math.min(selectionStart.rowIndex, selectionEnd.rowIndex);
-    const maxRow = Math.max(selectionStart.rowIndex, selectionEnd.rowIndex);
-    const minCol = Math.min(selectionStart.colIndex, selectionEnd.colIndex);
-    const maxCol = Math.max(selectionStart.colIndex, selectionEnd.colIndex);
-    return r >= minRow && r <= maxRow && c >= minCol && c <= maxCol;
-  }, [selectionStart, selectionEnd]);
-
-  useEffect(() => {
-    const handleMouseUp = () => setIsSelecting(false);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => window.removeEventListener('mouseup', handleMouseUp);
-  }, []);
-
-  const handleGridKeyDown = (e: React.KeyboardEvent, r: number, c: number) => {
-    // Active Edit Mode Key Handling
-    if (editingCell && editingCell.rowIndex === r && editingCell.colIndex === c) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        setEditingCell(null);
-        // Move selection down
-        const nextRow = Math.min(editScenarioData.flows.length - 1, r + 1);
-        setSelectionStart({ rowIndex: nextRow, colIndex: c });
-        setSelectionEnd({ rowIndex: nextRow, colIndex: c });
-        setTimeout(() => {
-          const el = document.getElementById(`cell-${nextRow}-${c}`);
-          el?.focus();
-        }, 0);
-      } else if (e.key === 'Tab') {
-        e.preventDefault();
-        setEditingCell(null);
-        if (e.shiftKey) {
-          const prevCol = Math.max(0, c - 1);
-          setSelectionStart({ rowIndex: r, colIndex: prevCol });
-          setSelectionEnd({ rowIndex: r, colIndex: prevCol });
-          setTimeout(() => {
-            const el = document.getElementById(`cell-${r}-${prevCol}`);
-            el?.focus();
-          }, 0);
-        } else {
-          const nextCol = Math.min(COL_KEYS.length - 1, c + 1);
-          setSelectionStart({ rowIndex: r, colIndex: nextCol });
-          setSelectionEnd({ rowIndex: r, colIndex: nextCol });
-          setTimeout(() => {
-            const el = document.getElementById(`cell-${r}-${nextCol}`);
-            el?.focus();
-          }, 0);
-        }
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        setEditingCell(null);
-        setTimeout(() => {
-          const el = document.getElementById(`cell-${r}-${c}`);
-          el?.focus();
-        }, 0);
-      }
-      return;
-    }
-
-    // Navigation Mode Key Handling
-    if (e.key.startsWith('Arrow')) {
-      e.preventDefault();
-      let nextRow = r;
-      let nextCol = c;
-
-      if (e.key === 'ArrowUp') nextRow = Math.max(0, r - 1);
-      else if (e.key === 'ArrowDown') nextRow = Math.min(editScenarioData.flows.length - 1, r + 1);
-      else if (e.key === 'ArrowLeft') nextCol = Math.max(0, c - 1);
-      else if (e.key === 'ArrowRight') nextCol = Math.min(COL_KEYS.length - 1, c + 1);
-
-      if (e.shiftKey) {
-        setSelectionEnd({ rowIndex: nextRow, colIndex: nextCol });
-      } else {
-        setSelectionStart({ rowIndex: nextRow, colIndex: nextCol });
-        setSelectionEnd({ rowIndex: nextRow, colIndex: nextCol });
-      }
-
-      setTimeout(() => {
-        const el = document.getElementById(`cell-${nextRow}-${nextCol}`);
-        el?.focus();
-      }, 0);
-    } else if (e.key === 'Tab') {
-      e.preventDefault();
-      let nextCol = c;
-      let nextRow = r;
-      if (e.shiftKey) {
-        if (c > 0) {
-          nextCol = c - 1;
-        } else if (r > 0) {
-          nextRow = r - 1;
-          nextCol = COL_KEYS.length - 1;
-        }
-      } else {
-        if (c < COL_KEYS.length - 1) {
-          nextCol = c + 1;
-        } else if (r < editScenarioData.flows.length - 1) {
-          nextRow = r + 1;
-          nextCol = 0;
-        }
-      }
-      setSelectionStart({ rowIndex: nextRow, colIndex: nextCol });
-      setSelectionEnd({ rowIndex: nextRow, colIndex: nextCol });
-      setTimeout(() => {
-        const el = document.getElementById(`cell-${nextRow}-${nextCol}`);
-        el?.focus();
-      }, 0);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      setEditingCell({ rowIndex: r, colIndex: c });
-    } else if (e.key === 'Backspace' || e.key === 'Delete') {
-      e.preventDefault();
-      if (selectionStart && selectionEnd) {
-        const minRow = Math.min(selectionStart.rowIndex, selectionEnd.rowIndex);
-        const maxRow = Math.max(selectionStart.rowIndex, selectionEnd.rowIndex);
-        const minCol = Math.min(selectionStart.colIndex, selectionEnd.colIndex);
-        const maxCol = Math.max(selectionStart.colIndex, selectionEnd.colIndex);
-
-        const newFlows = editScenarioData.flows.map((flow, rIdx) => {
-          if (rIdx >= minRow && rIdx <= maxRow) {
-            const updated = { ...flow };
-            for (let cIdx = minCol; cIdx <= maxCol; cIdx++) {
-              updated[COL_KEYS[cIdx]] = '';
-            }
-            return updated;
-          }
-          return flow;
-        });
-        updateScenario(editScenario, { flows: newFlows });
-      }
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      setSelectionStart(null);
-      setSelectionEnd(null);
-    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      // Overwrite value and enter edit mode directly
-      e.preventDefault();
-      setEditingCell({ rowIndex: r, colIndex: c });
-      
-      const newFlows = [...editScenarioData.flows];
-      newFlows[r] = { ...newFlows[r], [COL_KEYS[c]]: e.key };
-      updateScenario(editScenario, { flows: newFlows });
-    }
-  };
-
-  const handleGridCopy = (e: React.ClipboardEvent) => {
-    if (editingCell) return;
-
-    if (selectionStart && selectionEnd) {
-      e.preventDefault();
-      const minRow = Math.min(selectionStart.rowIndex, selectionEnd.rowIndex);
-      const maxRow = Math.max(selectionStart.rowIndex, selectionEnd.rowIndex);
-      const minCol = Math.min(selectionStart.colIndex, selectionEnd.colIndex);
-      const maxCol = Math.max(selectionStart.colIndex, selectionEnd.colIndex);
-
-      const rowsTsv: string[] = [];
-      for (let rIdx = minRow; rIdx <= maxRow; rIdx++) {
-        const flow = editScenarioData.flows[rIdx];
-        if (!flow) continue;
-        const rowValues: string[] = [];
-        for (let cIdx = minCol; cIdx <= maxCol; cIdx++) {
-          rowValues.push(flow[COL_KEYS[cIdx]]);
-        }
-        rowsTsv.push(rowValues.join('\t'));
-      }
-
-      const tsv = rowsTsv.join('\n');
-      e.clipboardData.setData('text/plain', tsv);
-      
-      setCopiedFeedback(true);
-      setTimeout(() => setCopiedFeedback(false), 2000);
-    }
-  };
-
-  const handleGridPaste = (e: React.ClipboardEvent) => {
-    if (editingCell) return;
-
-    if (selectionStart) {
-      e.preventDefault();
-      const text = e.clipboardData.getData('text/plain');
-      if (!text) return;
-
-      const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
-      const newFlows = [...editScenarioData.flows];
-      
-      const startRow = selectionStart.rowIndex;
-      const startCol = selectionStart.colIndex;
-
-      let currentRow = startRow;
-      for (let i = 0; i < lines.length; i++) {
-        const cells = lines[i].split('\t');
-        if (!newFlows[currentRow]) {
-          newFlows[currentRow] = { Source: '', Target: '', Value: '', Color: '' };
-        }
-        let cellIdx = 0;
-        for (let cIdx = startCol; cIdx < COL_KEYS.length && cellIdx < cells.length; cIdx++) {
-          newFlows[currentRow] = {
-            ...newFlows[currentRow],
-            [COL_KEYS[cIdx]]: cells[cellIdx].trim()
-          };
-          cellIdx++;
-        }
-        currentRow++;
-      }
-
-      if (newFlows.length > 0 && (newFlows[newFlows.length - 1].Source.trim() !== '' || newFlows[newFlows.length - 1].Target.trim() !== '')) {
-        newFlows.push({ Source: '', Target: '', Value: '', Color: '' });
-      }
-
-      updateScenario(editScenario, { flows: newFlows });
-    }
-  };
-
   const { labels } = useMemo(() => buildSankeyData(activeScenario.flows, config), [activeScenario.flows, config]);
 
   return (
@@ -1434,33 +1130,6 @@ export default function Editor() {
                     Arrowhead <span className="float-right font-mono">{config.arrowSize}</span>
                   </label>
                   <input type="range" min="0" max="50" value={config.arrowSize} onChange={e => updateConfig({ arrowSize: parseInt(e.target.value) })} className="w-full" />
-                </div>
-                <div>
-                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
-                    Ghost flows below
-                  </label>
-                  <input 
-                    type="number" 
-                    step="0.001" 
-                    min="0" 
-                    value={config.ghostThreshold} 
-                    onChange={e => updateConfig({ ghostThreshold: parseFloat(e.target.value) ?? 0.001 })} 
-                    className="w-full bg-[var(--surface)] p-1 text-[11px] rounded border border-[var(--border)] text-[var(--text)]" 
-                  />
-                </div>
-                <div>
-                  <label className="block mb-1 text-[11px] font-medium text-[var(--text2)]">
-                    Ghost opacity <span className="float-right font-mono">{config.ghostOpacity.toFixed(2)}</span>
-                  </label>
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="1" 
-                    step="0.05" 
-                    value={config.ghostOpacity} 
-                    onChange={e => updateConfig({ ghostOpacity: parseFloat(e.target.value) })} 
-                    className="w-full" 
-                  />
                 </div>
               </div>
             )}
@@ -1754,10 +1423,7 @@ export default function Editor() {
                           ? "text-[var(--text)] bg-[var(--surface)] border-b-[var(--accent)]" 
                           : "text-[var(--text2)] bg-[var(--surface2)] border-b-transparent hover:text-[var(--text)]"
                       )}
-                      onClick={() => {
-                        setEditScenario(scenarioKey);
-                        setViewScenario(scenarioKey);
-                      }}
+                      onClick={() => setEditScenario(scenarioKey)}
                     >
                       {scenarioKey === 'before' ? 'Before' : scenarioKey === 'after' ? 'After' : scenarioKey}
                     </button>
@@ -1829,11 +1495,7 @@ export default function Editor() {
                       </div>
                     </div>
                     <div className="border border-[var(--border)] rounded-[var(--radius)] overflow-auto data-table-wrap">
-                      <table 
-                        className="w-full text-[11.5px] border-collapse"
-                        onCopy={handleGridCopy}
-                        onPaste={handleGridPaste}
-                      >
+                      <table className="w-full text-[11.5px] border-collapse">
                         <thead className="sticky top-0 z-10">
                           <tr className="bg-[var(--surface2)]">
                             <th className="p-1 px-2 text-left font-medium text-[var(--text2)] text-[10.5px] uppercase tracking-wider border-b border-[var(--border)]">Source</th>
@@ -1863,58 +1525,10 @@ export default function Editor() {
                                 draggedIndex === i && "opacity-40 bg-[var(--surface2)] border-dashed border-[var(--accent)]"
                               )}
                             >
-                              {COL_KEYS.map((field, colIdx) => {
-                                const value = flow[field];
-                                const isEditing = editingCell?.rowIndex === i && editingCell?.colIndex === colIdx;
-                                const isSelected = isCellSelected(i, colIdx);
-
-                                return (
-                                  <td 
-                                    key={field}
-                                    className={cn(
-                                      "p-0 border-r border-[var(--border)] relative",
-                                      isSelected && "bg-[var(--accent)]/15 outline outline-1 outline-[var(--accent)]/60 z-10"
-                                    )}
-                                  >
-                                    {isEditing ? (
-                                      <input 
-                                        id={`input-${i}-${colIdx}`}
-                                        type="text" 
-                                        value={value} 
-                                        autoFocus
-                                        onChange={e => handleFlowChange(i, field, e.target.value)} 
-                                        onBlur={() => setEditingCell(null)}
-                                        onKeyDown={e => handleGridKeyDown(e, i, colIdx)}
-                                        className="w-full border-transparent bg-[var(--surface)] text-[var(--text)] p-1 px-2 text-[11.5px] focus:outline-none"
-                                      />
-                                    ) : (
-                                      <div 
-                                        id={`cell-${i}-${colIdx}`}
-                                        tabIndex={0}
-                                        onKeyDown={e => handleGridKeyDown(e, i, colIdx)}
-                                        onMouseDown={e => {
-                                          if (e.shiftKey && selectionStart) {
-                                            setSelectionEnd({ rowIndex: i, colIndex: colIdx });
-                                          } else {
-                                            setIsSelecting(true);
-                                            setSelectionStart({ rowIndex: i, colIndex: colIdx });
-                                            setSelectionEnd({ rowIndex: i, colIndex: colIdx });
-                                          }
-                                        }}
-                                        onMouseEnter={() => {
-                                          if (isSelecting) {
-                                            setSelectionEnd({ rowIndex: i, colIndex: colIdx });
-                                          }
-                                        }}
-                                        onDoubleClick={() => setEditingCell({ rowIndex: i, colIndex: colIdx })}
-                                        className="w-full h-full min-h-[26px] p-1 px-2 select-none cursor-cell focus:outline-none flex items-center"
-                                      >
-                                        {value}
-                                      </div>
-                                    )}
-                                  </td>
-                                );
-                              })}
+                              <td className="p-0"><input type="text" value={flow.Source} onPaste={e => handleTablePaste(e, i, 'Source')} onChange={e => handleFlowChange(i, 'Source', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
+                              <td className="p-0"><input type="text" value={flow.Target} onPaste={e => handleTablePaste(e, i, 'Target')} onChange={e => handleFlowChange(i, 'Target', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
+                              <td className="p-0"><input type="text" value={flow.Value} onPaste={e => handleTablePaste(e, i, 'Value')} onChange={e => handleFlowChange(i, 'Value', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
+                              <td className="p-0"><input type="text" value={flow.Color} onPaste={e => handleTablePaste(e, i, 'Color')} onChange={e => handleFlowChange(i, 'Color', e.target.value)} className="w-full border-transparent bg-transparent focus:bg-[var(--surface)] p-1" /></td>
                               <td className="p-1 flex items-center justify-center gap-1">
                                 {(i !== editScenarioData.flows.length - 1 || flow.Source) && (
                                   <>
@@ -1992,10 +1606,7 @@ export default function Editor() {
                      "px-3.5 py-1 text-xs font-semibold rounded-[var(--radius)] border border-[var(--border)] transition-all",
                      viewScenario === 'before' ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "bg-[var(--surface2)] text-[var(--text2)] hover:border-[var(--text2)] hover:text-[var(--text)]"
                    )}
-                   onClick={() => {
-                     setViewScenario('before');
-                     setEditScenario('before');
-                   }}
+                   onClick={() => setViewScenario('before')}
                  >
                    Before
                  </button>
@@ -2031,10 +1642,7 @@ export default function Editor() {
                      "px-3.5 py-1 text-xs font-semibold rounded-[var(--radius)] border border-[var(--border)] transition-all",
                      viewScenario === 'after' ? "bg-[#22c55e] border-[#22c55e] text-white" : "bg-[var(--surface2)] text-[var(--text2)] hover:border-[var(--text2)] hover:text-[var(--text)]"
                    )}
-                   onClick={() => {
-                     setViewScenario('after');
-                     setEditScenario('after');
-                   }}
+                   onClick={() => setViewScenario('after')}
                  >
                    After
                  </button>

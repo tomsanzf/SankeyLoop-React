@@ -70,7 +70,7 @@ export function buildSankeyData(flows: Flow[], cfg: Config) {
     if (v2 < 0) {
       [source, target, v2] = [target, source, Math.abs(v2)];
     }
-    const ghost = (v2 === 0);
+    const ghost = (v2 < cfg.ghostThreshold);
     for (const n of [source, target]) {
       if (!(n in l2i)) {
         l2i[n] = labels.length;

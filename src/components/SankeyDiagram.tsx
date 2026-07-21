@@ -127,12 +127,20 @@ export const SankeyDiagram: React.FC<SankeyDiagramProps> = ({
       if (!found) safeX = (sortedX[sortedX.length - 1] || 0) + 0.05;
       if (safeX > 1) safeX = -0.5; // push completely out of bounds left
       
-      const xs = labels.map((l, i) => l ? scenario.nodePositions[l]?.x : (i === labels.length - 2 ? safeX : safeX + 0.001));
-      const ys = labels.map((l, i) => l ? scenario.nodePositions[l]?.y : 0.5);
-      if (xs.every(x => x != null)) {
-        nodeX = xs as number[];
-        nodeY = ys as number[];
-      }
+      const xs = labels.map((l, i) => {
+        if (l && scenario.nodePositions[l]?.x !== undefined) {
+          return scenario.nodePositions[l].x;
+        }
+        return i === labels.length - 2 ? safeX : safeX + 0.001 * i;
+      });
+      const ys = labels.map((l, i) => {
+        if (l && scenario.nodePositions[l]?.y !== undefined) {
+          return scenario.nodePositions[l].y;
+        }
+        return 0.5;
+      });
+      nodeX = xs;
+      nodeY = ys;
     }
 
     if (!nodeX && config.nodeAlignment !== 'justify') {

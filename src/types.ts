@@ -36,6 +36,7 @@ export interface Config {
   nodeThickness: number;
   linkOpacity: number;
   ghostOpacity: number;
+  ghostThreshold: number;
   arrowSize: number;
   labelSize: number;
   labelColor: string;
