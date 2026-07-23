@@ -215,7 +215,7 @@ const pages = [
         <p style="color: #a09d98; margin-bottom: 20px;">Syntax format: <code>Source [Amount] Target #ColorOrTemperature</code>. For example: <code>Gas Boiler [85] Steam Pipe #FF4500</code> creates an 85-unit flow from Gas Boiler to Steam Pipe colored with an orange/red thermal code.</p>
 
         <h2 style="font-size: 26px; margin-top: 40px; margin-bottom: 16px;">2. Copy-Paste from Microsoft Excel &amp; Google Sheets</h2>
-        <p style="color: #a09d98; margin-bottom: 20px;">If your data is currently stored in spreadsheet software, you can highlight columns containing Source, Target, and Value cells, copy them directly (`Ctrl+C`), and paste them straight into SankeyLoop (`Ctrl+V`). The parsing engine automatically detects tab-separated and comma-separated formats and converts them into valid flow relationships.</p>
+        <p style="color: #a09d98; margin-bottom: 20px;">If your data is currently stored in spreadsheet software, you can highlight columns containing Source, Target, and Value cells, copy them directly (<code>Ctrl+C</code>), and paste them straight into SankeyLoop (<code>Ctrl+V</code>). The parsing engine automatically detects tab-separated and comma-separated formats and converts them into valid flow relationships.</p>
 
         <h2 style="font-size: 26px; margin-top: 40px; margin-bottom: 16px;">3. Export &amp; Publication Settings</h2>
         <p style="color: #a09d98; margin-bottom: 20px;">Once your layout is complete, you can export your diagram at up to 3x raster scaling as a PNG image, or as a lossless Scalable Vector Graphics (SVG) file suitable for direct insertion into academic publications, corporate reports, and vector editing suites like Adobe Illustrator.</p>
