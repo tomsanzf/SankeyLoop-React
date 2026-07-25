@@ -311,14 +311,14 @@ export default function Editor() {
           
           const newFlows = bFlows.map((fB, sIdx) => {
             const fA = startToEndMap.get(sIdx);
-            const vB = parseFloat(String(fB.Value).replace(',', '.')) || 0;
-            const vA = fA ? (parseFloat(String(fA.Value).replace(',', '.')) || 0) : 0;
+            const vB = parseFloat(String(fB.Value).replace(/\s/g, '').replace(',', '.')) || 0;
+            const vA = fA ? (parseFloat(String(fA.Value).replace(/\s/g, '').replace(',', '.')) || 0) : 0;
             const v = vB + (vA - vB) * t;
             return { ...fB, Value: v.toFixed(2), Color: interpolateFlowColor(fB.Color, fA?.Color, t, config) };
           });
 
           unmatchedEnd.forEach(fA => {
-            const vA = parseFloat(String(fA.Value).replace(',', '.')) || 0;
+            const vA = parseFloat(String(fA.Value).replace(/\s/g, '').replace(',', '.')) || 0;
             const v = vA * t;
             newFlows.push({ ...fA, Value: v.toFixed(2) });
           });
@@ -619,8 +619,8 @@ export default function Editor() {
 
         const interpolatedFlows = sStart.flows.map((fB, sIdx) => {
           const fA = startToEndMap.get(sIdx);
-          const vB = parseFloat(String(fB.Value).replace(',', '.')) || 0;
-          const vA = fA ? (parseFloat(String(fA.Value).replace(',', '.')) || 0) : 0;
+          const vB = parseFloat(String(fB.Value).replace(/\s/g, '').replace(',', '.')) || 0;
+          const vA = fA ? (parseFloat(String(fA.Value).replace(/\s/g, '').replace(',', '.')) || 0) : 0;
           const v = vB + (vA - vB) * localT;
           return {
             ...fB,
@@ -630,7 +630,7 @@ export default function Editor() {
         });
 
         unmatchedEnd.forEach(fA => {
-          const vA = parseFloat(String(fA.Value).replace(',', '.')) || 0;
+          const vA = parseFloat(String(fA.Value).replace(/\s/g, '').replace(',', '.')) || 0;
           interpolatedFlows.push({ ...fA, Value: (vA * localT).toFixed(4) });
         });
 
@@ -869,6 +869,8 @@ export default function Editor() {
     updateScenario(editScenario, {
       flows: [{ Source: '', Target: '', Value: '', Color: '' }],
       nodeColorOverrides: {},
+      nodePositions: {},
+      hasDraggedNodes: false,
     });
   };
 

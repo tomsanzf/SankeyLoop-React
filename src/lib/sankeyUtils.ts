@@ -61,7 +61,7 @@ export function buildSankeyData(flows: Flow[], cfg: Config) {
     let source = String(row.Source || '').trim();
     let target = String(row.Target || '').trim();
     if (!source || !target) return;
-    const parsed = parseFloat(String(row.Value || '').replace(',', '.'));
+    const parsed = parseFloat(String(row.Value || '').replace(/\s/g, '').replace(',', '.'));
     if (isNaN(parsed)) {
       warnings.push(`⚠️ Cannot parse value "${row.Value}" for ${source} → ${target}`);
       return;
@@ -484,7 +484,7 @@ export function getNodeLabel(
       let target = String(flow.Target || '').trim();
       if (!source || !target) return;
       
-      let val = parseFloat(String(flow.Value || '').replace(',', '.')) || 0;
+      let val = parseFloat(String(flow.Value || '').replace(/\s/g, '').replace(',', '.')) || 0;
       if (val < 0) {
         [source, target, val] = [target, source, Math.abs(val)];
       }
